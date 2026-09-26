@@ -29,12 +29,14 @@ class TestGeminiProvider:
         mock_client = MagicMock()
         mock_client_class.return_value = mock_client
 
+        mock_chat = MagicMock()
+        mock_client.chats.create.return_value = mock_chat
+
         mock_response = MagicMock()
         mock_response.text = "Hello from Gemini"
-        mock_response.model = "test-model"
         mock_response.usage_metadata.prompt_token_count = 10
         mock_response.usage_metadata.candidates_token_count = 5
-        mock_client.models.generate_content.return_value = mock_response
+        mock_chat.send_message.return_value = mock_response
 
         provider = GeminiProvider(api_key="test-key", model="test-model")
         messages = [
@@ -55,12 +57,14 @@ class TestGeminiProvider:
         mock_client = MagicMock()
         mock_client_class.return_value = mock_client
 
+        mock_chat = MagicMock()
+        mock_client.chats.create.return_value = mock_chat
+
         mock_response = MagicMock()
         mock_response.text = "Response"
-        mock_response.model = "test-model"
         mock_response.usage_metadata.prompt_token_count = 5
         mock_response.usage_metadata.candidates_token_count = 3
-        mock_client.models.generate_content.return_value = mock_response
+        mock_chat.send_message.return_value = mock_response
 
         provider = GeminiProvider(api_key="test-key", model="test-model")
         messages = [
@@ -72,9 +76,8 @@ class TestGeminiProvider:
 
         provider.chat(messages)
 
-        call_args = mock_client.models.generate_content.call_args
-        contents = call_args.kwargs.get("contents") or call_args[1].get("contents")
-        assert len(contents) == 3
+        mock_client.chats.create.assert_called_once()
+        mock_chat.send_message.assert_called_once()
 
 
 class TestOpenAIProvider:

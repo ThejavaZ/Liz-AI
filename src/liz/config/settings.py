@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
 
     ai_provider: str = "gemini"
-    ai_model: str = "gemini-3.8-flash"
+    ai_model: str = "gemini-2.0-flash"
 
     openai_api_key: str | None = None
     gemini_api_key: str | None = None

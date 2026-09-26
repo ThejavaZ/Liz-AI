@@ -38,11 +38,14 @@ class GeminiProvider(AIProvider):
             system_instruction=system_instruction,
         ) if system_instruction else None
 
-        response = self.client.models.generate_content(
+        chat = self.client.chats.create(
             model=self.model,
-            contents=contents,
             config=config,
+            history=contents[:-1] if len(contents) > 1 else [],
         )
+
+        last_message = contents[-1].parts[0].text if contents else ""
+        response = chat.send_message(last_message)
 
         return AIResponse(
             content=response.text,
