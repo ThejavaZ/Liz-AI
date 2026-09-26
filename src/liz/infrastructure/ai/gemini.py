@@ -48,6 +48,14 @@ class GeminiProvider(AIProvider):
             description=prop.get("description"),
         )
 
+    def _extract_text(self, response: Any) -> str:
+        text_parts = []
+        if response.candidates and response.candidates[0].content:
+            for part in response.candidates[0].content.parts:
+                if hasattr(part, "text") and part.text:
+                    text_parts.append(part.text)
+        return "".join(text_parts)
+
     def chat(
         self,
         messages: list[Message],
@@ -98,7 +106,7 @@ class GeminiProvider(AIProvider):
                     ))
 
         return AIResponse(
-            content=response.text or "",
+            content=self._extract_text(response),
             model=self.model,
             tool_calls=tool_calls,
             usage={

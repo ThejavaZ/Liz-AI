@@ -32,8 +32,18 @@ class TestGeminiProvider:
         mock_chat = MagicMock()
         mock_client.chats.create.return_value = mock_chat
 
+        mock_part = MagicMock()
+        mock_part.text = "Hello from Gemini"
+        mock_part.function_call = None
+
+        mock_content = MagicMock()
+        mock_content.parts = [mock_part]
+
+        mock_candidate = MagicMock()
+        mock_candidate.content = mock_content
+
         mock_response = MagicMock()
-        mock_response.text = "Hello from Gemini"
+        mock_response.candidates = [mock_candidate]
         mock_response.usage_metadata.prompt_token_count = 10
         mock_response.usage_metadata.candidates_token_count = 5
         mock_chat.send_message.return_value = mock_response
