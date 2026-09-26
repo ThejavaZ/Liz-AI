@@ -27,6 +27,7 @@ class Context:
 
     def _trim(self) -> None:
         if len(self.messages) > self.max_messages:
-            system = self.messages[0]
-            recent = self.messages[-(self.max_messages - 1) :]
-            self.messages = [system] + recent
+            self.messages = [
+                self.messages[0],
+                *self.messages[-(self.max_messages - 1) :],
+            ]
