@@ -17,6 +17,10 @@ class Context:
         self.messages.append(Message(role=Role.ASSISTANT, content=content))
         self._trim()
 
+    def add_tool_result(self, tool_call_id: str, content: str) -> None:
+        self.messages.append(Message(role=Role.TOOL, content=content))
+        self._trim()
+
     def get_messages(self) -> list[Message]:
         return list(self.messages)
 

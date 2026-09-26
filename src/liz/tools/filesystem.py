@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from typing import Any
 
 from liz.tools.base import Tool
 from liz.tools.models import ToolResult
@@ -13,6 +14,19 @@ class ListDirectory(Tool):
     @property
     def description(self) -> str:
         return "List files and directories at a given path"
+
+    @property
+    def parameters_schema(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Directory path to list",
+                }
+            },
+            "required": [],
+        }
 
     def execute(self, path: str = ".") -> ToolResult:
         try:
@@ -48,6 +62,19 @@ class ReadFile(Tool):
     def description(self) -> str:
         return "Read the contents of a file"
 
+    @property
+    def parameters_schema(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "File path to read",
+                }
+            },
+            "required": ["path"],
+        }
+
     def execute(self, path: str) -> ToolResult:
         try:
             target = Path(path)
@@ -72,6 +99,19 @@ class FileExists(Tool):
     @property
     def description(self) -> str:
         return "Check if a file or directory exists"
+
+    @property
+    def parameters_schema(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Path to check",
+                }
+            },
+            "required": ["path"],
+        }
 
     def execute(self, path: str) -> ToolResult:
         try:

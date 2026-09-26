@@ -1,9 +1,10 @@
 from unittest.mock import MagicMock
+from typing import Any
 
 import pytest
 
 from liz.infrastructure.ai.base import AIProvider
-from liz.core.models import AIResponse
+from liz.core.models import AIResponse, Message
 
 
 class MockAIProvider(AIProvider):
@@ -11,8 +12,8 @@ class MockAIProvider(AIProvider):
         self.response_text = response_text
         self.chat_calls: list[dict] = []
 
-    def chat(self, messages: list[dict]) -> AIResponse:
-        self.chat_calls.append({"messages": messages})
+    def chat(self, messages: list[Message], tools: list[dict[str, Any]] | None = None) -> AIResponse:
+        self.chat_calls.append({"messages": messages, "tools": tools})
         return AIResponse(
             content=self.response_text,
             model="mock-model",

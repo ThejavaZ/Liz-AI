@@ -1,4 +1,5 @@
 import subprocess
+from typing import Any
 
 from liz.tools.base import Tool
 from liz.tools.models import ToolResult
@@ -12,6 +13,10 @@ class GitStatus(Tool):
     @property
     def description(self) -> str:
         return "Show the working tree status"
+
+    @property
+    def parameters_schema(self) -> dict[str, Any]:
+        return {"type": "object", "properties": {}}
 
     def execute(self, cwd: str | None = None) -> ToolResult:
         try:
@@ -43,6 +48,19 @@ class GitLog(Tool):
     def description(self) -> str:
         return "Show recent git commit log"
 
+    @property
+    def parameters_schema(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "max_count": {
+                    "type": "integer",
+                    "description": "Maximum number of commits to show",
+                }
+            },
+            "required": [],
+        }
+
     def execute(self, cwd: str | None = None, max_count: int = 10) -> ToolResult:
         try:
             result = subprocess.run(
@@ -72,6 +90,10 @@ class GitBranch(Tool):
     @property
     def description(self) -> str:
         return "List git branches"
+
+    @property
+    def parameters_schema(self) -> dict[str, Any]:
+        return {"type": "object", "properties": {}}
 
     def execute(self, cwd: str | None = None) -> ToolResult:
         try:

@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import Any
 
 from liz.tools.models import ToolResult
 
@@ -14,6 +15,10 @@ class Tool(ABC):
     @abstractmethod
     def description(self) -> str:
         pass
+
+    @property
+    def parameters_schema(self) -> dict[str, Any]:
+        return {"type": "object", "properties": {}}
 
     @property
     def requires_confirmation(self) -> bool:

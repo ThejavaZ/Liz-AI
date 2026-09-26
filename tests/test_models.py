@@ -8,7 +8,7 @@ class TestRole:
         assert Role.ASSISTANT.value == "assistant"
 
     def test_role_count(self) -> None:
-        assert len(Role) == 3
+        assert len(Role) == 4
 
 
 class TestMessage:

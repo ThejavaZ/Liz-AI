@@ -1,5 +1,6 @@
 import subprocess
 import shlex
+from typing import Any
 
 from liz.tools.base import Tool
 from liz.tools.models import ToolResult
@@ -36,6 +37,19 @@ class RunCommand(Tool):
     @property
     def description(self) -> str:
         return "Execute a safe system command from the allowed list"
+
+    @property
+    def parameters_schema(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "string",
+                    "description": "Command to execute",
+                }
+            },
+            "required": ["command"],
+        }
 
     @property
     def requires_confirmation(self) -> bool:

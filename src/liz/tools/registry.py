@@ -1,3 +1,5 @@
+from typing import Any
+
 from liz.tools.base import Tool
 from liz.tools.models import ToolResult, ToolStatus
 from liz.tools.permissions import PermissionLayer, Permission
@@ -19,6 +21,16 @@ class ToolRegistry:
 
     def list_names(self) -> list[str]:
         return list(self._tools.keys())
+
+    def get_tool_schemas(self) -> list[dict[str, Any]]:
+        schemas = []
+        for tool in self._tools.values():
+            schemas.append({
+                "name": tool.name,
+                "description": tool.description,
+                "parameters": tool.parameters_schema,
+            })
+        return schemas
 
     def execute(self, tool_name: str, **kwargs) -> ToolResult:
         tool = self._tools.get(tool_name)

@@ -57,7 +57,7 @@ class TestAgent:
             from tests.conftest import MockAIProvider as MP
 
             class FailingProvider(MP):
-                def chat(self, messages):
+                def chat(self, messages, tools=None):
                     raise ConnectionError("API down")
 
             mock_create.return_value = FailingProvider()
