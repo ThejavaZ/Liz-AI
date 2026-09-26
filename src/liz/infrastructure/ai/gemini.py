@@ -1,4 +1,5 @@
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 from liz.core.models import AIResponse, Message, Role
 from liz.infrastructure.ai.base import AIProvider
@@ -9,40 +10,45 @@ class GeminiProvider(AIProvider):
         if not api_key:
             raise ValueError("Gemini API key is required")
 
-        genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel(model)
+        self.client = genai.Client(api_key=api_key)
+        self.model = model
 
     def chat(
         self,
         messages: list[Message],
     ) -> AIResponse:
-        history = []
         system_instruction = None
+        contents = []
 
         for msg in messages:
             if msg.role == Role.SYSTEM:
                 system_instruction = msg.content
             elif msg.role == Role.USER:
-                history.append({"role": "user", "parts": [msg.content]})
+                contents.append(types.Content(
+                    role="user",
+                    parts=[types.Part.from_text(text=msg.content)],
+                ))
             elif msg.role == Role.ASSISTANT:
-                history.append({"role": "model", "parts": [msg.content]})
+                contents.append(types.Content(
+                    role="model",
+                    parts=[types.Part.from_text(text=msg.content)],
+                ))
 
-        if system_instruction:
-            self.model = genai.GenerativeModel(
-                self.model.model_name,
-                system_instruction=system_instruction,
-            )
+        config = types.GenerateContentConfig(
+            system_instruction=system_instruction,
+        ) if system_instruction else None
 
-        chat = self.model.start_chat(history=history[:-1] if history else [])
-
-        last_user_msg = history[-1]["parts"][0] if history else ""
-        response = chat.send_message(last_user_msg)
+        response = self.client.models.generate_content(
+            model=self.model,
+            contents=contents,
+            config=config,
+        )
 
         return AIResponse(
             content=response.text,
-            model=self.model.model_name,
+            model=self.model,
             usage={
-                "input_tokens": response.usage_metadata.prompt_token_count,
-                "output_tokens": response.usage_metadata.candidates_token_count,
+                "input_tokens": response.usage_metadata.prompt_token_count or 0,
+                "output_tokens": response.usage_metadata.candidates_token_count or 0,
             },
         )

@@ -25,6 +25,24 @@ class TestFactory:
             provider = create_provider(_settings("gemini"))
             assert isinstance(provider, AIProvider)
 
+    def test_create_openai_provider(self) -> None:
+        with patch("liz.infrastructure.ai.openai.OpenAIProvider") as mock:
+            mock.return_value = MagicMock(spec=AIProvider)
+            provider = create_provider(_settings("openai"))
+            assert isinstance(provider, AIProvider)
+
+    def test_create_claude_provider(self) -> None:
+        with patch("liz.infrastructure.ai.claude.ClaudeProvider") as mock:
+            mock.return_value = MagicMock(spec=AIProvider)
+            provider = create_provider(_settings("claude"))
+            assert isinstance(provider, AIProvider)
+
+    def test_create_deepseek_provider(self) -> None:
+        with patch("liz.infrastructure.ai.deepseek.DeepSeekProvider") as mock:
+            mock.return_value = MagicMock(spec=AIProvider)
+            provider = create_provider(_settings("deepseek"))
+            assert isinstance(provider, AIProvider)
+
     def test_unknown_provider_raises(self) -> None:
         with pytest.raises(ValueError, match="Unknown provider"):
             create_provider(_settings("ollama"))
