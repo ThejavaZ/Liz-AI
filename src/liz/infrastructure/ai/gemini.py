@@ -56,11 +56,9 @@ class GeminiProvider(AIProvider):
                     text_parts.append(part.text)
         return "".join(text_parts)
 
-    def chat(
-        self,
-        messages: list[Message],
-        tools: list[dict[str, Any]] | None = None,
-    ) -> AIResponse:
+    def _convert_messages(
+        self, messages: list[Message]
+    ) -> tuple[str | None, list[types.Content]]:
         system_instruction = None
         contents = []
 
@@ -77,6 +75,23 @@ class GeminiProvider(AIProvider):
                     role="model",
                     parts=[types.Part.from_text(text=msg.content)],
                 ))
+            elif msg.role == Role.TOOL:
+                contents.append(types.Content(
+                    role="user",
+                    parts=[types.Part.from_function_response(
+                        name="tool_result",
+                        response={"result": msg.content},
+                    )],
+                ))
+
+        return system_instruction, contents
+
+    def chat(
+        self,
+        messages: list[Message],
+        tools: list[dict[str, Any]] | None = None,
+    ) -> AIResponse:
+        system_instruction, contents = self._convert_messages(messages)
 
         config = types.GenerateContentConfig(
             system_instruction=system_instruction,
