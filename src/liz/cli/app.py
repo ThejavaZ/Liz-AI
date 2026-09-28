@@ -7,6 +7,7 @@ from liz.tools.permissions import PermissionLayer, Permission
 from liz.tools.filesystem import ListDirectory, ReadFile, FileExists
 from liz.tools.git import GitStatus, GitLog, GitBranch
 from liz.tools.terminal import RunCommand
+from liz.cli.commands import CommandHandler
 
 
 def load_system_prompt() -> str:
@@ -39,9 +40,10 @@ def run_cli() -> None:
     system_prompt = load_system_prompt()
     tool_registry = create_tool_registry()
     agent = Agent(settings, system_prompt, tool_registry=tool_registry)
+    commands = CommandHandler(settings, agent.context, tool_registry)
 
     print(f"Liz AI ({settings.ai_provider}/{settings.ai_model})")
-    print("Type 'exit' or 'quit' to leave.\n")
+    print("Type /help for commands, or 'exit' to leave.\n")
 
     while True:
         try:
@@ -53,8 +55,15 @@ def run_cli() -> None:
         if not user_input:
             continue
 
+        result = commands.handle(user_input)
+        if result is not None:
+            print(f"\n{result.output}\n")
+            if result.should_exit:
+                break
+            continue
+
         if user_input.lower() in ("exit", "quit"):
-            print("Goodbye!")
+            print("\nGoodbye!")
             break
 
         try:
