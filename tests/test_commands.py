@@ -170,3 +170,154 @@ class TestCommandsReflectRegistry:
         assert "list_directory" in result.output
         assert "git_status" in result.output
         assert "read_file" not in result.output
+
+
+class TestConfigCommand:
+    def test_shows_provider(self) -> None:
+        result = _make_handler().handle("/config")
+        assert "gemini" in result.output
+
+    def test_shows_model(self) -> None:
+        result = _make_handler().handle("/config")
+        assert "test-model" in result.output
+
+    def test_masks_api_key(self) -> None:
+        settings = Settings(
+            ai_provider="gemini",
+            gemini_api_key="sk-verysecretkey1234567890",
+        )
+        handler = CommandHandler(settings, Context("sys"), ToolRegistry())
+        result = handler.handle("/config")
+        assert "sk-verysecretkey1234567890" not in result.output
+        assert "sk-v...7890" in result.output
+
+    def test_short_key_fully_masked(self) -> None:
+        result = _make_handler().handle("/config")
+        assert "test-key" not in result.output
+
+    def test_shows_unset_key(self) -> None:
+        settings = Settings(ai_provider="gemini")
+        handler = CommandHandler(settings, Context("sys"), ToolRegistry())
+        result = handler.handle("/config")
+        assert "(not set)" in result.output
+
+    def test_shows_data_dir(self) -> None:
+        result = _make_handler().handle("/config")
+        assert "data_dir" in result.output
+
+
+class TestDoctorCommand:
+    def test_reports_python(self) -> None:
+        result = _make_handler().handle("/doctor")
+        assert "Python" in result.output
+
+    def test_reports_provider(self) -> None:
+        result = _make_handler().handle("/doctor")
+        assert "Provider" in result.output
+
+    def test_reports_models(self) -> None:
+        result = _make_handler().handle("/doctor")
+        assert "Models" in result.output
+
+    def test_reports_tools(self) -> None:
+        result = _make_handler().handle("/doctor")
+        assert "Tools" in result.output
+
+    def test_warns_on_missing_key(self) -> None:
+        settings = Settings(ai_provider="gemini")
+        handler = CommandHandler(settings, Context("sys"), ToolRegistry())
+        result = handler.handle("/doctor")
+        assert "warn" in result.output
+
+    def test_ok_with_key(self) -> None:
+        result = _make_handler().handle("/doctor")
+        assert "[ok]" in result.output
+
+    def test_summary_line(self) -> None:
+        result = _make_handler().handle("/doctor")
+        assert "check" in result.output.lower() or "passed" in result.output.lower()
+
+    def test_unknown_provider_fails(self) -> None:
+        settings = Settings(ai_provider="bogus")
+        handler = CommandHandler(settings, Context("sys"), ToolRegistry())
+        result = handler.handle("/doctor")
+        assert "FAIL" in result.output
+
+
+class TestNotesCommand:
+    def _handler_with_notes(self) -> CommandHandler:
+        from liz.infrastructure.persistence.notes_store import SQLiteNotesStore
+
+        settings = Settings(ai_provider="gemini", gemini_api_key="k")
+        store = SQLiteNotesStore(":memory:")
+        return CommandHandler(settings, Context("sys"), ToolRegistry(), notes_store=store)
+
+    def test_notes_disabled(self) -> None:
+        result = _make_handler().handle("/notes")
+        assert "not enabled" in result.output
+
+    def test_list_empty(self) -> None:
+        result = self._handler_with_notes().handle("/notes")
+        assert "No notes" in result.output
+
+    def test_add_note(self) -> None:
+        handler = self._handler_with_notes()
+        result = handler.handle("/notes add MyTitle")
+        assert "Saved note #1" in result.output
+
+    def test_list_after_add(self) -> None:
+        handler = self._handler_with_notes()
+        handler.handle("/notes add MyTitle")
+        result = handler.handle("/notes")
+        assert "MyTitle" in result.output
+
+    def test_find_note(self) -> None:
+        handler = self._handler_with_notes()
+        handler.handle("/notes add MyTitle")
+        result = handler.handle("/notes find MyTitle")
+        assert "MyTitle" in result.output
+
+    def test_find_no_match(self) -> None:
+        handler = self._handler_with_notes()
+        handler.handle("/notes add MyTitle")
+        result = handler.handle("/notes find ZZZ")
+        assert "No notes matching" in result.output
+
+    def test_delete_note(self) -> None:
+        handler = self._handler_with_notes()
+        handler.handle("/notes add MyTitle")
+        result = handler.handle("/notes del 1")
+        assert "Deleted note #1" in result.output
+
+    def test_delete_missing(self) -> None:
+        handler = self._handler_with_notes()
+        result = handler.handle("/notes del 999")
+        assert "No note" in result.output
+
+    def test_delete_bad_id(self) -> None:
+        handler = self._handler_with_notes()
+        result = handler.handle("/notes del abc")
+        assert "Usage" in result.output
+
+    def test_add_without_title(self) -> None:
+        handler = self._handler_with_notes()
+        result = handler.handle("/notes add")
+        assert "Usage" in result.output
+
+    def test_find_without_query(self) -> None:
+        handler = self._handler_with_notes()
+        result = handler.handle("/notes find")
+        assert "Usage" in result.output
+
+    def test_unknown_subcommand(self) -> None:
+        handler = self._handler_with_notes()
+        result = handler.handle("/notes bogus")
+        assert "Usage" in result.output
+
+
+class TestHelpListsNewCommands:
+    def test_help_includes_new_commands(self) -> None:
+        result = _make_handler().handle("/help")
+        assert "/notes" in result.output
+        assert "/config" in result.output
+        assert "/doctor" in result.output

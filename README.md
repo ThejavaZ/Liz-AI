@@ -14,9 +14,13 @@ Built with **modularity, security, and practical AI tooling** in mind.
 - Tool calling with permission control
 - Persistent conversation memory (SQLite)
 - Fact storage and session restore
-- Internal CLI commands (`/help`, `/tools`, `/models`, `/memory`, `/clear`, `/status`)
+- Persistent notes with search
+- Web search without an API key
+- Safe calculator (AST-based, never executes code)
+- Health diagnostics (`/doctor`) and config inspection (`/config`)
+- Internal CLI commands (`/help`, `/tools`, `/models`, `/memory`, `/notes`, `/config`, `/doctor`, `/clear`, `/status`)
 - Docker support
-- 173+ automated tests
+- 286+ automated tests
 
 ## Quick Start
 
@@ -28,6 +32,13 @@ cd Liz-AI
 python -m venv .venv
 source .venv/bin/activate
 pip install -e .
+```
+
+Optional extras:
+
+```bash
+pip install -e ".[web]"   # faster, more reliable web search
+pip install -e ".[dev]"   # test tooling
 ```
 
 ### Configuration
@@ -60,16 +71,19 @@ docker compose up --build
 
 Internal commands are available without calling the AI provider:
 
-| Command   | Description                          |
-|-----------|--------------------------------------|
-| `/help`   | Show available commands              |
-| `/tools`  | List registered tools                |
-| `/models` | List models for the current provider |
-| `/memory` | Show stored facts and session info   |
-| `/clear`  | Clear conversation history           |
-| `/status` | Show provider, model, and state      |
-| `/exit`   | Exit Liz AI                          |
-| `/quit`   | Exit Liz AI                          |
+| Command   | Description                                  |
+|-----------|----------------------------------------------|
+| `/help`   | Show available commands                      |
+| `/tools`  | List registered tools                        |
+| `/models` | List models for the current provider         |
+| `/memory` | Show stored facts and session info           |
+| `/notes`  | Manage notes: `list` / `add` / `del` / `find`|
+| `/config` | Show effective configuration (keys masked)   |
+| `/doctor` | Run health diagnostics                       |
+| `/clear`  | Clear conversation history                   |
+| `/status` | Show provider, model, and state              |
+| `/exit`   | Exit Liz AI                                  |
+| `/quit`   | Exit Liz AI                                  |
 
 Any input without `/` is sent to the AI provider.
 
@@ -112,17 +126,24 @@ AI_MODEL=llama3.1
 
 Liz has access to the following tools:
 
-| Tool          | Description                    |
-|---------------|--------------------------------|
-| `list_directory` | List files in a directory   |
-| `read_file`      | Read file contents          |
-| `file_exists`    | Check if a file exists      |
-| `git_status`     | Show git status             |
-| `git_log`        | Show git log                |
-| `git_branch`     | List git branches           |
-| `run_command`    | Execute a shell command     |
+| Tool            | Description                                    |
+|-----------------|------------------------------------------------|
+| `list_directory`| List files in a directory                      |
+| `read_file`     | Read file contents                             |
+| `file_exists`   | Check if a file exists                         |
+| `git_status`    | Show git status                                |
+| `git_log`       | Show git log                                   |
+| `git_branch`    | List git branches                              |
+| `run_command`   | Execute a shell command                        |
+| `calculator`    | Evaluate math safely (AST-based, no `eval`)    |
+| `web_search`    | Search the web (DuckDuckGo, no API key)        |
+| `notes`         | Create, list, search and delete persistent notes|
 
 Tools are controlled by a permission layer (ALLOW/DENY/ASK).
+
+`web_search` uses the `duckduckgo-search` package when installed and
+falls back to DuckDuckGo's HTML endpoint otherwise, so it works either
+way.
 
 ## Architecture
 
@@ -147,6 +168,7 @@ src/liz/
 │   ├── agent.py        # Agent with tool calling loop
 │   ├── context.py      # Conversation context
 │   ├── memory.py       # Memory port + ConversationMemory
+│   ├── notes.py        # Notes port + Note
 │   └── models.py       # Domain models
 ├── infrastructure/
 │   ├── ai/
@@ -160,7 +182,8 @@ src/liz/
 │   │   ├── deepseek.py       # DeepSeek
 │   │   └── ollama.py         # Local models via Ollama
 │   └── persistence/
-│       └── memory_store.py   # SQLiteMemoryStore
+│       ├── memory_store.py   # SQLiteMemoryStore
+│       └── notes_store.py    # SQLiteNotesStore
 └── tools/
     ├── base.py         # Tool interface
     ├── models.py       # ToolResult, ToolStatus
@@ -168,7 +191,10 @@ src/liz/
     ├── permissions.py  # PermissionLayer
     ├── filesystem.py   # File operations
     ├── git.py          # Git operations
-    └── terminal.py     # Shell commands
+    ├── terminal.py     # Shell commands
+    ├── calculator.py   # Safe math evaluation
+    ├── web.py          # Web search
+    └── notes.py        # Notes tool
 ```
 
 ## Development
@@ -189,6 +215,9 @@ tests/
 ├── test_providers.py          # Provider integrations
 ├── test_model_flexibility.py  # Model registry and fallback chain
 ├── test_memory.py             # Memory persistence
+├── test_notes.py              # Notes persistence and tool
+├── test_calculator.py         # Safe math evaluation
+├── test_web.py                # Web search tool
 ├── test_filesystem.py         # File operations
 ├── test_git.py                # Git operations
 ├── test_terminal.py           # Terminal commands
@@ -234,8 +263,18 @@ tests/
 - [x] Fact storage
 - [x] Session restore on startup
 - [x] `/memory` command
+- [x] Persistent notes with search
+- [x] `/notes` command
 
-### Phase 5 — Conversation Quality
+### Phase 5 — Practical Tools ✅
+
+- [x] Safe calculator (AST-based, no `eval`)
+- [x] Web search (DuckDuckGo, no API key)
+- [x] `/config` effective settings view
+- [x] `/doctor` health diagnostics
+- [x] Model fallback chain and `/models`
+
+### Phase 6 — Conversation Quality
 
 - [ ] Streaming responses (token by token)
 - [ ] Conversation summarization when context grows
@@ -244,7 +283,7 @@ tests/
 - [ ] `/remember` and `/forget` commands
 - [ ] Export / import conversation history
 
-### Phase 6 — Voice
+### Phase 7 — Voice
 
 - [ ] Speech-to-text
 - [ ] Text-to-speech
@@ -253,7 +292,7 @@ tests/
 - [ ] Voice activity detection
 - [ ] Background listening daemon
 
-### Phase 7 — Proactivity
+### Phase 8 — Proactivity
 
 - [ ] Event monitors (battery, network, builds)
 - [ ] Scheduled tasks / cron-like routines
@@ -261,7 +300,7 @@ tests/
 - [ ] Rule engine ("when X happens, do Y")
 - [ ] Priority and quiet hours
 
-### Phase 8 — System Integration
+### Phase 9 — System Integration
 
 - [ ] Application launching
 - [ ] Process management
@@ -271,14 +310,14 @@ tests/
 - [ ] Screenshot capture
 - [ ] Window management
 
-### Phase 9 — Multimodal
+### Phase 10 — Multimodal
 
 - [ ] Screen reading / vision
 - [ ] Image understanding
 - [ ] Document parsing (PDF, Office)
 - [ ] Web page reading
 
-### Phase 10 — Automation & Workflows
+### Phase 11 — Automation & Workflows
 
 - [ ] Multi-step workflow engine
 - [ ] Scriptable routines
@@ -286,7 +325,7 @@ tests/
 - [ ] Undo / rollback for actions
 - [ ] Action history and audit log
 
-### Phase 11 — Personalization
+### Phase 12 — Personalization
 
 - [ ] User preference learning
 - [ ] Custom system prompt per user
@@ -294,7 +333,7 @@ tests/
 - [ ] Frequently used tool shortcuts
 - [ ] Per-project context profiles
 
-### Phase 12 — Ecosystem
+### Phase 13 — Ecosystem
 
 - [ ] Plugin / extension architecture
 - [ ] Third-party tool registry
@@ -302,7 +341,7 @@ tests/
 - [ ] REST API for external control
 - [ ] Web dashboard
 
-### Phase 13 — Reliability & Security
+### Phase 14 — Reliability & Security
 
 - [ ] Rate limit handling and retry policies
 - [ ] Sandboxed command execution
