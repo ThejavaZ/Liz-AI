@@ -1,7 +1,10 @@
 import sys
+from pathlib import Path
 
 from liz.config.settings import Settings
 from liz.core.agent import Agent
+from liz.core.memory import ConversationMemory
+from liz.infrastructure.persistence.memory_store import SQLiteMemoryStore
 from liz.tools.registry import ToolRegistry
 from liz.tools.permissions import PermissionLayer, Permission
 from liz.tools.filesystem import ListDirectory, ReadFile, FileExists
@@ -35,42 +38,64 @@ def create_tool_registry() -> ToolRegistry:
     return registry
 
 
+def create_memory(settings: Settings) -> ConversationMemory:
+    db_path = Path(settings.data_dir) / "liz.db"
+    store = SQLiteMemoryStore(db_path)
+    return ConversationMemory(store)
+
+
 def run_cli() -> None:
     settings = Settings()
     system_prompt = load_system_prompt()
     tool_registry = create_tool_registry()
-    agent = Agent(settings, system_prompt, tool_registry=tool_registry)
-    commands = CommandHandler(settings, agent.context, tool_registry)
+    memory = create_memory(settings)
+    agent = Agent(
+        settings,
+        system_prompt,
+        tool_registry=tool_registry,
+        memory=memory,
+    )
+    commands = CommandHandler(
+        settings,
+        agent.context,
+        tool_registry,
+        provider=agent.provider,
+        agent=agent,
+    )
 
-    print(f"Liz AI ({settings.ai_provider}/{settings.ai_model})")
-    print("Type /help for commands, or 'exit' to leave.\n")
+    model = getattr(agent.provider, "active", agent.provider).model
+    print(f"Liz AI ({settings.ai_provider}/{model})")
+    print("Type /help for commands, or /exit to leave.\n")
 
-    while True:
-        try:
-            user_input = input("You: ").strip()
-        except (EOFError, KeyboardInterrupt):
-            print("\nGoodbye!")
-            break
-
-        if not user_input:
-            continue
-
-        result = commands.handle(user_input)
-        if result is not None:
-            print(f"\n{result.output}\n")
-            if result.should_exit:
+    try:
+        while True:
+            try:
+                user_input = input("You: ").strip()
+            except (EOFError, KeyboardInterrupt):
+                print("\nGoodbye!")
                 break
-            continue
 
-        if user_input.lower() in ("exit", "quit"):
-            print("\nGoodbye!")
-            break
+            if not user_input:
+                continue
 
-        try:
-            response = agent.chat(user_input)
-            print(f"\nLiz: {response}\n")
-        except Exception as e:
-            print(f"\nError: {e}\n")
+            result = commands.handle(user_input)
+            if result is not None:
+                print(f"\n{result.output}\n")
+                if result.should_exit:
+                    break
+                continue
+
+            if user_input.lower() in ("exit", "quit"):
+                print("\nGoodbye!")
+                break
+
+            try:
+                response = agent.chat(user_input)
+                print(f"\nLiz: {response}\n")
+            except Exception as e:
+                print(f"\nError: {e}\n")
+    finally:
+        memory.close()
 
 
 def main() -> None:

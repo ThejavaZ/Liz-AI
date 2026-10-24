@@ -8,11 +8,15 @@ Built with **modularity, security, and practical AI tooling** in mind.
 
 ## Features
 
-- Multi-provider AI support (Gemini, OpenAI, Claude, DeepSeek)
+- Multi-provider AI support (Gemini, OpenAI, Claude, DeepSeek, Ollama)
+- Model fallback chain — a bad model name degrades instead of failing
+- Local model support via Ollama (no API key, no quota)
 - Tool calling with permission control
-- Internal CLI commands (`/help`, `/tools`, `/clear`, `/status`)
+- Persistent conversation memory (SQLite)
+- Fact storage and session restore
+- Internal CLI commands (`/help`, `/tools`, `/models`, `/memory`, `/clear`, `/status`)
 - Docker support
-- 121+ automated tests
+- 173+ automated tests
 
 ## Quick Start
 
@@ -56,25 +60,28 @@ docker compose up --build
 
 Internal commands are available without calling the AI provider:
 
-| Command  | Description                     |
-|----------|---------------------------------|
-| `/help`  | Show available commands         |
-| `/tools` | List registered tools           |
-| `/clear` | Clear conversation history      |
-| `/status`| Show provider, model, and state |
-| `/exit`  | Exit Liz AI                     |
-| `/quit`  | Exit Liz AI                     |
+| Command   | Description                          |
+|-----------|--------------------------------------|
+| `/help`   | Show available commands              |
+| `/tools`  | List registered tools                |
+| `/models` | List models for the current provider |
+| `/memory` | Show stored facts and session info   |
+| `/clear`  | Clear conversation history           |
+| `/status` | Show provider, model, and state      |
+| `/exit`   | Exit Liz AI                          |
+| `/quit`   | Exit Liz AI                          |
 
 Any input without `/` is sent to the AI provider.
 
 ## Supported Providers
 
-| Provider   | Variable          | Default Model       |
-|------------|-------------------|---------------------|
-| Gemini     | `AI_PROVIDER=gemini` | `gemini-2.0-flash` |
-| OpenAI     | `AI_PROVIDER=openai` | `gpt-4o-mini`      |
-| Claude     | `AI_PROVIDER=claude` | `claude-sonnet-4-20250514` |
-| DeepSeek   | `AI_PROVIDER=deepseek` | `deepseek-chat`  |
+| Provider | Variable               | Default Model             | API Key           |
+|----------|------------------------|---------------------------|-------------------|
+| Gemini   | `AI_PROVIDER=gemini`   | `gemini-2.0-flash`        | `GEMINI_API_KEY`  |
+| OpenAI   | `AI_PROVIDER=openai`   | `gpt-4o-mini`             | `OPENAI_API_KEY`  |
+| Claude   | `AI_PROVIDER=claude`   | `claude-sonnet-4-20250514`| `ANTHROPIC_API_KEY`|
+| DeepSeek | `AI_PROVIDER=deepseek` | `deepseek-chat`           | `DEEPSEEK_API_KEY`|
+| Ollama   | `AI_PROVIDER=ollama`   | `llama3.1`                | none (local)      |
 
 Set the provider and model in `.env`:
 
@@ -82,6 +89,23 @@ Set the provider and model in `.env`:
 AI_PROVIDER=openai
 AI_MODEL=gpt-4o-mini
 OPENAI_API_KEY=sk-...
+```
+
+`AI_MODEL` is optional. If omitted, Liz falls back to the provider default
+and then through a fallback chain, so a stale or mistyped model name
+degrades instead of failing.
+
+### Local models (Ollama)
+
+Run models locally with no API key and no quota:
+
+```bash
+ollama pull llama3.1
+```
+
+```env
+AI_PROVIDER=ollama
+AI_MODEL=llama3.1
 ```
 
 ## Tools
@@ -105,7 +129,9 @@ Tools are controlled by a permission layer (ALLOW/DENY/ASK).
 ```text
 CLI → CommandHandler (internal commands)
        ↓
-     Agent → AIProvider → Tool Calling → ToolRegistry → PermissionLayer → Tool
+     Agent → AIProvider (fallback chain) → Tool Calling → ToolRegistry → PermissionLayer → Tool
+       ↓
+   ConversationMemory → MemoryStore (SQLite)
 ```
 
 ### Project Structure
@@ -120,15 +146,21 @@ src/liz/
 ├── core/
 │   ├── agent.py        # Agent with tool calling loop
 │   ├── context.py      # Conversation context
+│   ├── memory.py       # Memory port + ConversationMemory
 │   └── models.py       # Domain models
 ├── infrastructure/
-│   └── ai/
-│       ├── base.py     # AIProvider interface
-│       ├── factory.py  # Provider factory
-│       ├── gemini.py   # Google Gemini
-│       ├── openai.py   # OpenAI
-│       ├── claude.py   # Anthropic Claude
-│       └── deepseek.py # DeepSeek
+│   ├── ai/
+│   │   ├── base.py           # AIProvider interface
+│   │   ├── factory.py        # Provider factory
+│   │   ├── fallback.py       # Model fallback chain
+│   │   ├── models_registry.py# Provider → models map
+│   │   ├── gemini.py         # Google Gemini
+│   │   ├── openai.py         # OpenAI
+│   │   ├── claude.py         # Anthropic Claude
+│   │   ├── deepseek.py       # DeepSeek
+│   │   └── ollama.py         # Local models via Ollama
+│   └── persistence/
+│       └── memory_store.py   # SQLiteMemoryStore
 └── tools/
     ├── base.py         # Tool interface
     ├── models.py       # ToolResult, ToolStatus
@@ -151,24 +183,25 @@ python -m pytest tests/ -v
 
 ```
 tests/
-├── test_context.py          # Context and conversation history
-├── test_models.py           # Domain models
-├── test_provider_factory.py # Provider selection
-├── test_provider_gemini.py  # Gemini integration
-├── test_provider_openai.py  # OpenAI integration
-├── test_provider_claude.py  # Claude integration
-├── test_provider_deepseek.py # DeepSeek integration
-├── test_tool_filesystem.py  # File operations
-├── test_tool_git.py         # Git operations
-├── test_tool_terminal.py    # Terminal commands
-├── test_tool_models.py      # Tool result models
-├── test_tool_calling.py     # Agent-tool integration
-└── test_commands.py         # CLI commands
+├── test_context.py            # Context and conversation history
+├── test_models.py             # Domain models
+├── test_factory.py            # Provider selection
+├── test_providers.py          # Provider integrations
+├── test_model_flexibility.py  # Model registry and fallback chain
+├── test_memory.py             # Memory persistence
+├── test_filesystem.py         # File operations
+├── test_git.py                # Git operations
+├── test_terminal.py           # Terminal commands
+├── test_permissions.py        # Permission layer
+├── test_registry.py           # Tool registry
+├── test_tool_models.py        # Tool result models
+├── test_tool_calling.py       # Agent-tool integration
+└── test_commands.py           # CLI commands
 ```
 
 ## Roadmap
 
-### Phase 1 - Foundation ✅
+### Phase 1 — Foundation ✅
 
 - [x] Project structure
 - [x] Configuration layer
@@ -177,7 +210,7 @@ tests/
 - [x] Basic CLI conversation
 - [x] AI provider integration
 
-### Phase 2 - Tools ✅
+### Phase 2 — Tools ✅
 
 - [x] Filesystem tools
 - [x] Git tools
@@ -187,25 +220,96 @@ tests/
 - [x] Multi-provider support
 - [x] Tool calling integration
 
-### Phase 3 - CLI ✅
+### Phase 3 — CLI ✅
 
 - [x] Internal commands
 - [x] Docker support
-- [ ] Persistent memory
-- [ ] Conversation history
+- [x] Model registry and fallback chain
+- [x] Local model support (Ollama)
+- [x] `/models` command
 
-### Phase 4 - Voice
+### Phase 4 — Memory ✅
+
+- [x] Persistent conversation history (SQLite)
+- [x] Fact storage
+- [x] Session restore on startup
+- [x] `/memory` command
+
+### Phase 5 — Conversation Quality
+
+- [ ] Streaming responses (token by token)
+- [ ] Conversation summarization when context grows
+- [ ] Multiple named sessions
+- [ ] Memory search (retrieve relevant past facts)
+- [ ] `/remember` and `/forget` commands
+- [ ] Export / import conversation history
+
+### Phase 6 — Voice
 
 - [ ] Speech-to-text
 - [ ] Text-to-speech
 - [ ] Voice interaction loop
+- [ ] Wake word / activation ("Hey Liz")
+- [ ] Voice activity detection
+- [ ] Background listening daemon
 
-### Phase 5 - System Integration
+### Phase 7 — Proactivity
+
+- [ ] Event monitors (battery, network, builds)
+- [ ] Scheduled tasks / cron-like routines
+- [ ] Proactive notifications
+- [ ] Rule engine ("when X happens, do Y")
+- [ ] Priority and quiet hours
+
+### Phase 8 — System Integration
 
 - [ ] Application launching
 - [ ] Process management
 - [ ] System information
-- [ ] Desktop integration
+- [ ] Desktop notifications
+- [ ] Clipboard access
+- [ ] Screenshot capture
+- [ ] Window management
+
+### Phase 9 — Multimodal
+
+- [ ] Screen reading / vision
+- [ ] Image understanding
+- [ ] Document parsing (PDF, Office)
+- [ ] Web page reading
+
+### Phase 10 — Automation & Workflows
+
+- [ ] Multi-step workflow engine
+- [ ] Scriptable routines
+- [ ] Task chaining (tool → tool)
+- [ ] Undo / rollback for actions
+- [ ] Action history and audit log
+
+### Phase 11 — Personalization
+
+- [ ] User preference learning
+- [ ] Custom system prompt per user
+- [ ] Tone and style adaptation
+- [ ] Frequently used tool shortcuts
+- [ ] Per-project context profiles
+
+### Phase 12 — Ecosystem
+
+- [ ] Plugin / extension architecture
+- [ ] Third-party tool registry
+- [ ] MCP (Model Context Protocol) support
+- [ ] REST API for external control
+- [ ] Web dashboard
+
+### Phase 13 — Reliability & Security
+
+- [ ] Rate limit handling and retry policies
+- [ ] Sandboxed command execution
+- [ ] Secret redaction in logs
+- [ ] Encrypted memory at rest
+- [ ] Audit trail for tool calls
+- [ ] Graceful offline mode
 
 ## Security
 

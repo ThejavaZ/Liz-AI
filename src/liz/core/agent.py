@@ -1,6 +1,7 @@
 from liz.config.settings import Settings
 from liz.core.context import Context
-from liz.core.models import ToolCall
+from liz.core.memory import ConversationMemory
+from liz.core.models import Message, Role, ToolCall
 from liz.infrastructure.ai.base import AIProvider
 from liz.infrastructure.ai.factory import create_provider
 from liz.tools.registry import ToolRegistry
@@ -15,14 +16,25 @@ class Agent:
         settings: Settings,
         system_prompt: str,
         tool_registry: ToolRegistry | None = None,
+        memory: ConversationMemory | None = None,
     ) -> None:
         self.settings = settings
         self.provider: AIProvider = create_provider(settings)
         self.context = Context(system_prompt)
         self.tool_registry = tool_registry
+        self.memory = memory
+
+        if memory is not None:
+            self._restore_history()
+
+    def _restore_history(self) -> None:
+        for message in self.memory.load_history():
+            self.context.messages.append(message)
 
     def chat(self, user_input: str) -> str:
         self.context.add_user_message(user_input)
+        if self.memory is not None:
+            self.memory.remember(Message(role=Role.USER, content=user_input))
 
         tools = self.tool_registry.get_tool_schemas() if self.tool_registry else None
 
@@ -34,6 +46,10 @@ class Agent:
 
             if not response.tool_calls:
                 self.context.add_assistant_message(response.content)
+                if self.memory is not None:
+                    self.memory.remember(
+                        Message(role=Role.ASSISTANT, content=response.content)
+                    )
                 return response.content
 
             self.context.add_assistant_message(response.content or "")
@@ -47,7 +63,16 @@ class Agent:
             tools=tools,
         )
         self.context.add_assistant_message(final_response.content)
+        if self.memory is not None:
+            self.memory.remember(
+                Message(role=Role.ASSISTANT, content=final_response.content)
+            )
         return final_response.content
+
+    def clear_conversation(self) -> None:
+        self.context.clear()
+        if self.memory is not None:
+            self.memory.clear()
 
     def _execute_tool(self, tool_call: ToolCall) -> str:
         if self.tool_registry is None:
@@ -65,7 +90,6 @@ class Agent:
             return f"Error: {result.error}"
 
     def _add_tool_result(self, tool_call: ToolCall, result: str) -> None:
-        from liz.core.models import Message, Role
         self.context.messages.append(
             Message(role=Role.TOOL, content=result)
         )

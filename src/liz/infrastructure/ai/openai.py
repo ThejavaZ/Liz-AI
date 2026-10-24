@@ -1,3 +1,5 @@
+from typing import Any
+
 from openai import OpenAI
 
 from liz.core.models import AIResponse, Message, Role
@@ -5,16 +7,26 @@ from liz.infrastructure.ai.base import AIProvider
 
 
 class OpenAIProvider(AIProvider):
-    def __init__(self, api_key: str | None, model: str) -> None:
+    def __init__(
+        self,
+        api_key: str | None,
+        model: str,
+        base_url: str | None = None,
+    ) -> None:
         if not api_key:
             raise ValueError("OpenAI API key is required")
 
-        self.client = OpenAI(api_key=api_key)
+        kwargs: dict[str, Any] = {"api_key": api_key}
+        if base_url:
+            kwargs["base_url"] = base_url
+
+        self.client = OpenAI(**kwargs)
         self.model = model
 
     def chat(
         self,
         messages: list[Message],
+        tools: list[dict[str, Any]] | None = None,
     ) -> AIResponse:
         oai_messages = []
 

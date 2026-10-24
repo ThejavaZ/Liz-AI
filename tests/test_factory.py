@@ -45,7 +45,14 @@ class TestFactory:
 
     def test_unknown_provider_raises(self) -> None:
         with pytest.raises(ValueError, match="Unknown provider"):
-            create_provider(_settings("ollama"))
+            create_provider(_settings("bogus"))
+
+    def test_create_ollama_provider(self) -> None:
+        with patch("liz.infrastructure.ai.ollama.OllamaProvider") as mock:
+            mock.return_value = MagicMock(spec=AIProvider)
+            settings = Settings(ai_provider="ollama", ai_model="llama3.1")
+            provider = create_provider(settings)
+            assert isinstance(provider, AIProvider)
 
     def test_case_insensitive_provider(self) -> None:
         with patch("liz.infrastructure.ai.gemini.GeminiProvider") as mock:
