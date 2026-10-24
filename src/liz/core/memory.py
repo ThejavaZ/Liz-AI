@@ -36,6 +36,10 @@ class MemoryStore(ABC):
         ...
 
     @abstractmethod
+    def delete_fact(self, key: str) -> bool:
+        ...
+
+    @abstractmethod
     def close(self) -> None:
         ...
 
@@ -69,6 +73,9 @@ class ConversationMemory:
 
     def learn_fact(self, key: str, value: str) -> None:
         self.store.save_fact(key, value)
+
+    def forget_fact(self, key: str) -> bool:
+        return self.store.delete_fact(key)
 
     def close(self) -> None:
         self.store.close()

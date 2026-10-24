@@ -18,10 +18,11 @@ Built with **modularity, security, and practical AI tooling** in mind.
 - Web search without an API key
 - Safe calculator (AST-based, never executes code)
 - Streaming responses (token by token, all providers)
+- Remember / forget facts (`/remember`, `/forget`, plus a `memory` tool Liz can use herself)
 - Health diagnostics (`/doctor`) and config inspection (`/config`)
 - Internal CLI commands (`/help`, `/tools`, `/models`, `/memory`, `/notes`, `/config`, `/doctor`, `/clear`, `/status`)
 - Docker support
-- 305+ automated tests
+- 342+ automated tests
 
 ## Quick Start
 
@@ -78,6 +79,8 @@ Internal commands are available without calling the AI provider:
 | `/tools`  | List registered tools                        |
 | `/models` | List models for the current provider         |
 | `/memory` | Show stored facts and session info           |
+| `/remember`| Store a fact: `/remember editor = neovim`    |
+| `/forget` | Remove a stored fact                         |
 | `/notes`  | Manage notes: `list` / `add` / `del` / `find`|
 | `/config` | Show effective configuration (keys masked)   |
 | `/doctor` | Run health diagnostics                       |
@@ -139,6 +142,7 @@ Liz has access to the following tools:
 | `calculator`    | Evaluate math safely (AST-based, no `eval`)    |
 | `web_search`    | Search the web (DuckDuckGo, no API key)        |
 | `notes`         | Create, list, search and delete persistent notes|
+| `memory`        | Remember or forget facts across sessions      |
 
 Tools are controlled by a permission layer (ALLOW/DENY/ASK).
 
@@ -216,6 +220,7 @@ tests/
 ├── test_providers.py          # Provider integrations
 ├── test_model_flexibility.py  # Model registry and fallback chain
 ├── test_memory.py             # Memory persistence
+├── test_memory_tool.py        # Memory tool (remember/forget)
 ├── test_notes.py              # Notes persistence and tool
 ├── test_calculator.py         # Safe math evaluation
 ├── test_web.py                # Web search tool
@@ -282,7 +287,7 @@ tests/
 - [ ] Conversation summarization when context grows
 - [ ] Multiple named sessions
 - [ ] Memory search (retrieve relevant past facts)
-- [ ] `/remember` and `/forget` commands
+- [x] `/remember` and `/forget` commands
 - [ ] Export / import conversation history
 
 ### Phase 7 — Voice

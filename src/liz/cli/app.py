@@ -14,6 +14,7 @@ from liz.tools.terminal import RunCommand
 from liz.tools.calculator import Calculator
 from liz.tools.web import WebSearch
 from liz.tools.notes import Notes
+from liz.tools.memory import Memory as MemoryTool
 from liz.cli.commands import CommandHandler
 
 
@@ -26,7 +27,7 @@ def load_system_prompt() -> str:
         return "You are Liz, a helpful AI assistant."
 
 
-def create_tool_registry(notes_store=None) -> ToolRegistry:
+def create_tool_registry(notes_store=None, memory=None) -> ToolRegistry:
     permissions = PermissionLayer()
     permissions.set_default(Permission.ALLOW)
 
@@ -44,6 +45,9 @@ def create_tool_registry(notes_store=None) -> ToolRegistry:
     if notes_store is not None:
         registry.register(Notes(notes_store))
 
+    if memory is not None:
+        registry.register(MemoryTool(memory))
+
     return registry
 
 
@@ -56,6 +60,28 @@ def create_memory(settings: Settings) -> ConversationMemory:
 def create_notes_store(settings: Settings) -> SQLiteNotesStore:
     db_path = Path(settings.data_dir) / "notes.db"
     return SQLiteNotesStore(db_path)
+
+
+def warn_unknown_model(settings: Settings) -> None:
+    """Warn when the configured model is not in the known list.
+
+    An unknown model means every request pays for a failed call plus
+    the fallback, which feels like high latency.
+    """
+    if not settings.ai_model:
+        return
+
+    from liz.infrastructure.ai.models_registry import list_models
+
+    known = list_models(settings.ai_provider)
+    if known and settings.ai_model not in known:
+        print(
+            f"Warning: model '{settings.ai_model}' is not a known "
+            f"{settings.ai_provider} model.\n"
+            f"         Every request will fail over to a fallback, which "
+            f"adds latency.\n"
+            f"         Fix AI_MODEL in .env or run /models to see options.\n"
+        )
 
 
 def _stream_response(agent, user_input: str) -> None:
@@ -83,8 +109,8 @@ def run_cli() -> None:
     settings = Settings()
     system_prompt = load_system_prompt()
     notes_store = create_notes_store(settings)
-    tool_registry = create_tool_registry(notes_store)
     memory = create_memory(settings)
+    tool_registry = create_tool_registry(notes_store, memory)
     agent = Agent(
         settings,
         system_prompt,
@@ -102,6 +128,7 @@ def run_cli() -> None:
 
     model = getattr(agent.provider, "active", agent.provider).model
     print(f"Liz AI ({settings.ai_provider}/{model})")
+    warn_unknown_model(settings)
     print("Type /help for commands, or /exit to leave.\n")
 
     try:
@@ -128,6 +155,8 @@ def run_cli() -> None:
 
             try:
                 _stream_response(agent, user_input)
+            except KeyboardInterrupt:
+                print("\n[cancelled]")
             except Exception as e:
                 print(f"\nError: {e}\n")
     finally:

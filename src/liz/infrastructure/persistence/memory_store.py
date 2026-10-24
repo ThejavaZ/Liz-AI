@@ -82,5 +82,12 @@ class SQLiteMemoryStore(MemoryStore):
         ).fetchall()
         return {row["key"]: row["value"] for row in rows}
 
+    def delete_fact(self, key: str) -> bool:
+        cursor = self._connection.execute(
+            "DELETE FROM facts WHERE key = ?", (key,)
+        )
+        self._connection.commit()
+        return cursor.rowcount > 0
+
     def close(self) -> None:
         self._connection.close()

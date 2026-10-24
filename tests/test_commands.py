@@ -321,3 +321,154 @@ class TestHelpListsNewCommands:
         assert "/notes" in result.output
         assert "/config" in result.output
         assert "/doctor" in result.output
+
+
+class _FakeMemory:
+    def __init__(self):
+        self.store = self
+        self._facts = {}
+        self.session_id = "default"
+
+    def learn_fact(self, key, value):
+        self._facts[key] = value
+
+    def forget_fact(self, key):
+        if key in self._facts:
+            del self._facts[key]
+            return True
+        return False
+
+    def facts(self):
+        return dict(self._facts)
+
+    def load_history(self):
+        return []
+
+    def store_fact(self, key, value):
+        raise AttributeError("store_fact should not be called")
+
+
+def _handler_with_memory() -> tuple[CommandHandler, _FakeMemory]:
+    from liz.core.agent import Agent
+
+    memory = _FakeMemory()
+    settings = Settings(ai_provider="gemini", gemini_api_key="k")
+    agent = MagicMock(spec=Agent)
+    agent.memory = memory
+    handler = CommandHandler(
+        settings, Context("sys"), ToolRegistry(), agent=agent
+    )
+    return handler, memory
+
+
+class TestRememberCommand:
+    def test_equals_syntax(self) -> None:
+        handler, memory = _handler_with_memory()
+        result = handler.handle("/remember editor = neovim")
+        assert "Remembered" in result.output
+        assert memory.facts()["editor"] == "neovim"
+
+    def test_space_syntax(self) -> None:
+        handler, memory = _handler_with_memory()
+        handler.handle("/remember editor neovim")
+        assert memory.facts()["editor"] == "neovim"
+
+    def test_single_word_becomes_true(self) -> None:
+        handler, memory = _handler_with_memory()
+        handler.handle("/remember likes_cats")
+        assert memory.facts()["likes_cats"] == "true"
+
+    def test_overwrites_existing(self) -> None:
+        handler, memory = _handler_with_memory()
+        handler.handle("/remember editor = vim")
+        handler.handle("/remember editor = neovim")
+        assert memory.facts()["editor"] == "neovim"
+
+    def test_no_args_usage(self) -> None:
+        handler, _ = _handler_with_memory()
+        result = handler.handle("/remember")
+        assert "Usage" in result.output
+
+    def test_memory_disabled(self) -> None:
+        result = _make_handler().handle("/remember x = y")
+        assert "not enabled" in result.output
+
+    def test_does_not_use_store_fact(self) -> None:
+        handler, memory = _handler_with_memory()
+        handler.handle("/remember editor = neovim")
+        assert memory.facts()["editor"] == "neovim"
+
+
+class TestForgetCommand:
+    def test_forget_existing(self) -> None:
+        handler, memory = _handler_with_memory()
+        memory.learn_fact("editor", "vim")
+
+        result = handler.handle("/forget editor")
+
+        assert "Forgot" in result.output
+        assert memory.facts() == {}
+
+    def test_forget_missing(self) -> None:
+        handler, _ = _handler_with_memory()
+        result = handler.handle("/forget nope")
+        assert "No fact" in result.output
+
+    def test_no_args_usage(self) -> None:
+        handler, _ = _handler_with_memory()
+        result = handler.handle("/forget")
+        assert "Usage" in result.output
+
+    def test_memory_disabled(self) -> None:
+        result = _make_handler().handle("/forget x")
+        assert "not enabled" in result.output
+
+    def test_forget_keeps_other_facts(self) -> None:
+        handler, memory = _handler_with_memory()
+        memory.learn_fact("a", "1")
+        memory.learn_fact("b", "2")
+
+        handler.handle("/forget a")
+
+        assert memory.facts() == {"b": "2"}
+
+
+class TestHelpListsMemoryCommands:
+    def test_help_includes_remember_and_forget(self) -> None:
+        result = _make_handler().handle("/help")
+        assert "/remember" in result.output
+        assert "/forget" in result.output
+
+
+class TestWarnUnknownModel:
+    def test_warns_on_unknown_model(self, capsys) -> None:
+        from liz.cli.app import warn_unknown_model
+
+        settings = Settings(
+            ai_provider="gemini", ai_model="models/gemini-3.8-flash"
+        )
+        warn_unknown_model(settings)
+        captured = capsys.readouterr()
+        assert "not a known" in captured.out
+        assert "latency" in captured.out
+
+    def test_no_warning_for_known_model(self, capsys) -> None:
+        from liz.cli.app import warn_unknown_model
+
+        settings = Settings(ai_provider="gemini", ai_model="gemini-2.0-flash")
+        warn_unknown_model(settings)
+        assert capsys.readouterr().out == ""
+
+    def test_no_warning_when_model_auto(self, capsys) -> None:
+        from liz.cli.app import warn_unknown_model
+
+        settings = Settings(ai_provider="gemini", ai_model=None)
+        warn_unknown_model(settings)
+        assert capsys.readouterr().out == ""
+
+    def test_no_warning_for_unknown_provider(self, capsys) -> None:
+        from liz.cli.app import warn_unknown_model
+
+        settings = Settings(ai_provider="bogus", ai_model="whatever")
+        warn_unknown_model(settings)
+        assert capsys.readouterr().out == ""

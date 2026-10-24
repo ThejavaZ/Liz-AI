@@ -31,6 +31,12 @@ class InMemoryStore(MemoryStore):
     def get_facts(self):
         return dict(self.facts)
 
+    def delete_fact(self, key):
+        if key in self.facts:
+            del self.facts[key]
+            return True
+        return False
+
     def close(self):
         self.closed = True
 
@@ -223,3 +229,54 @@ class TestAgentWithMemory:
         assert agent.memory is None
         agent.chat("hi")
         assert len(agent.context.get_messages()) == 3
+
+
+class TestForgetFact:
+    def test_forget_existing(self) -> None:
+        store = InMemoryStore()
+        memory = ConversationMemory(store)
+        memory.learn_fact("editor", "neovim")
+
+        assert memory.forget_fact("editor") is True
+        assert "editor" not in memory.facts()
+
+    def test_forget_missing(self) -> None:
+        store = InMemoryStore()
+        memory = ConversationMemory(store)
+
+        assert memory.forget_fact("nope") is False
+
+    def test_forget_keeps_others(self) -> None:
+        store = InMemoryStore()
+        memory = ConversationMemory(store)
+        memory.learn_fact("a", "1")
+        memory.learn_fact("b", "2")
+
+        memory.forget_fact("a")
+
+        assert memory.facts() == {"b": "2"}
+
+
+class TestSQLiteForgetFact:
+    def test_forget_existing(self, tmp_path) -> None:
+        store = SQLiteMemoryStore(tmp_path / "m.db")
+        store.save_fact("editor", "neovim")
+
+        assert store.delete_fact("editor") is True
+        assert store.get_facts() == {}
+        store.close()
+
+    def test_forget_missing(self, tmp_path) -> None:
+        store = SQLiteMemoryStore(tmp_path / "m.db")
+        assert store.delete_fact("nope") is False
+        store.close()
+
+    def test_forget_persists(self, tmp_path) -> None:
+        SQLiteMemoryStore(tmp_path / "m.db").save_fact("a", "1")
+        store = SQLiteMemoryStore(tmp_path / "m.db")
+        store.delete_fact("a")
+        store.close()
+
+        reopened = SQLiteMemoryStore(tmp_path / "m.db")
+        assert reopened.get_facts() == {}
+        reopened.close()

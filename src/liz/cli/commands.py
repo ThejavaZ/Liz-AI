@@ -51,6 +51,8 @@ class CommandHandler:
             "models": self._models,
             "memory": self._memory,
             "notes": self._notes,
+            "remember": self._remember,
+            "forget": self._forget,
             "config": self._config,
             "doctor": self._doctor,
             "clear": self._clear,
@@ -81,6 +83,8 @@ class CommandHandler:
   /tools    List available tools
   /models   List available models for this provider
   /memory   Show stored facts and session info
+  /remember Store a fact: /remember editor = neovim
+  /forget   Remove a fact: /forget editor
   /notes    Manage notes: list | add <title> | del <id> | find <text>
   /config   Show effective configuration
   /doctor   Run health diagnostics
@@ -194,6 +198,45 @@ class CommandHandler:
         return CommandResult(
             output="Usage: /notes [list|add <title>|del <id>|find <text>]"
         )
+        
+    def _remember(self, args: str = "") -> CommandResult:
+        memory = self._memory_or_none()
+        if memory is None:
+            return CommandResult(output="Memory is not enabled.")
+
+        fact = args.strip()
+        if not fact:
+            return CommandResult(output="Usage: /remember <clave> = <valor>")
+
+        if "=" in fact:
+            key, _, value = fact.partition("=")
+        else:
+            words = fact.split(maxsplit=1)
+            key = words[0]
+            value = words[1] if len(words) > 1 else "true"
+
+        key, value = key.strip(), value.strip()
+        if not key or not value:
+            return CommandResult(output="Usage: /remember <clave> = <valor>")
+
+        memory.learn_fact(key, value)
+        return CommandResult(output=f"Remembered: {key} = {value}")
+
+    def _forget(self, args: str = "") -> CommandResult:
+        memory = self._memory_or_none()
+        if memory is None:
+            return CommandResult(output="Memory is not enabled.")
+
+        key = args.strip()
+        if not key:
+            return CommandResult(output="Usage: /forget <clave>")
+
+        if memory.forget_fact(key):
+            return CommandResult(output=f"Forgot: {key}")
+        return CommandResult(output=f"No fact stored as: {key}")
+
+    def _memory_or_none(self):
+        return getattr(self.agent, "memory", None) if self.agent else None
 
     def _config(self, args: str = "") -> CommandResult:
         rows = [
