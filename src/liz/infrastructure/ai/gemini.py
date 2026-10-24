@@ -1,9 +1,15 @@
-from typing import Any
+from typing import Any, Iterator
 
 from google import genai
 from google.genai import types
 
-from liz.core.models import AIResponse, Message, Role, ToolCall
+from liz.core.models import (
+    AIResponse,
+    Message,
+    Role,
+    StreamChunk,
+    ToolCall,
+)
 from liz.infrastructure.ai.base import AIProvider
 
 
@@ -86,13 +92,11 @@ class GeminiProvider(AIProvider):
 
         return system_instruction, contents
 
-    def chat(
+    def _build_config(
         self,
-        messages: list[Message],
-        tools: list[dict[str, Any]] | None = None,
-    ) -> AIResponse:
-        system_instruction, contents = self._convert_messages(messages)
-
+        system_instruction: str | None,
+        tools: list[dict[str, Any]] | None,
+    ) -> types.GenerateContentConfig | None:
         config = types.GenerateContentConfig(
             system_instruction=system_instruction,
         ) if system_instruction else None
@@ -101,16 +105,10 @@ class GeminiProvider(AIProvider):
             config = config or types.GenerateContentConfig()
             config.tools = self._convert_tools(tools)
 
-        chat = self.client.chats.create(
-            model=self.model,
-            config=config,
-            history=contents[:-1] if len(contents) > 1 else [],
-        )
+        return config
 
-        last_message = contents[-1].parts[0].text if contents else ""
-        response = chat.send_message(last_message)
-
-        tool_calls = []
+    def _extract_tool_calls(self, response: Any) -> list[ToolCall]:
+        tool_calls: list[ToolCall] = []
         if response.candidates and response.candidates[0].content:
             for part in response.candidates[0].content.parts:
                 if part.function_call:
@@ -119,13 +117,80 @@ class GeminiProvider(AIProvider):
                         name=part.function_call.name,
                         arguments=dict(part.function_call.args),
                     ))
+        return tool_calls
+
+    def _open_chat(
+        self,
+        messages: list[Message],
+        tools: list[dict[str, Any]] | None,
+    ):
+        system_instruction, contents = self._convert_messages(messages)
+        config = self._build_config(system_instruction, tools)
+
+        chat = self.client.chats.create(
+            model=self.model,
+            config=config,
+            history=contents[:-1] if len(contents) > 1 else [],
+        )
+
+        last_message = contents[-1].parts[0].text if contents else ""
+        return chat, last_message
+
+    def chat(
+        self,
+        messages: list[Message],
+        tools: list[dict[str, Any]] | None = None,
+    ) -> AIResponse:
+        chat, last_message = self._open_chat(messages, tools)
+        response = chat.send_message(last_message)
 
         return AIResponse(
             content=self._extract_text(response),
             model=self.model,
-            tool_calls=tool_calls,
+            tool_calls=self._extract_tool_calls(response),
             usage={
                 "input_tokens": response.usage_metadata.prompt_token_count or 0,
                 "output_tokens": response.usage_metadata.candidates_token_count or 0,
             },
+        )
+
+    def stream_chat(
+        self,
+        messages: list[Message],
+        tools: list[dict[str, Any]] | None = None,
+    ) -> Iterator[StreamChunk]:
+        chat, last_message = self._open_chat(messages, tools)
+
+        text_parts: list[str] = []
+        tool_calls: list[ToolCall] = []
+        usage: dict = {}
+
+        for chunk in chat.send_message_stream(last_message):
+            piece = self._extract_text(chunk)
+            if piece:
+                text_parts.append(piece)
+                yield StreamChunk(text=piece)
+
+            for call in self._extract_tool_calls(chunk):
+                if call not in tool_calls:
+                    tool_calls.append(call)
+
+            metadata = getattr(chunk, "usage_metadata", None)
+            if metadata is not None:
+                usage = {
+                    "input_tokens": metadata.prompt_token_count or 0,
+                    "output_tokens": metadata.candidates_token_count or 0,
+                }
+
+        response = AIResponse(
+            content="".join(text_parts),
+            model=self.model,
+            tool_calls=tool_calls,
+            usage=usage,
+        )
+        yield StreamChunk(
+            text="",
+            tool_calls=tool_calls,
+            done=True,
+            response=response,
         )

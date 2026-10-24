@@ -17,10 +17,11 @@ Built with **modularity, security, and practical AI tooling** in mind.
 - Persistent notes with search
 - Web search without an API key
 - Safe calculator (AST-based, never executes code)
+- Streaming responses (token by token, all providers)
 - Health diagnostics (`/doctor`) and config inspection (`/config`)
 - Internal CLI commands (`/help`, `/tools`, `/models`, `/memory`, `/notes`, `/config`, `/doctor`, `/clear`, `/status`)
 - Docker support
-- 286+ automated tests
+- 305+ automated tests
 
 ## Quick Start
 
@@ -218,6 +219,7 @@ tests/
 ├── test_notes.py              # Notes persistence and tool
 ├── test_calculator.py         # Safe math evaluation
 ├── test_web.py                # Web search tool
+├── test_streaming.py          # Streaming responses and fallback
 ├── test_filesystem.py         # File operations
 ├── test_git.py                # Git operations
 ├── test_terminal.py           # Terminal commands
@@ -276,7 +278,7 @@ tests/
 
 ### Phase 6 — Conversation Quality
 
-- [ ] Streaming responses (token by token)
+- [x] Streaming responses (token by token)
 - [ ] Conversation summarization when context grows
 - [ ] Multiple named sessions
 - [ ] Memory search (retrieve relevant past facts)

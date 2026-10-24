@@ -58,6 +58,27 @@ def create_notes_store(settings: Settings) -> SQLiteNotesStore:
     return SQLiteNotesStore(db_path)
 
 
+def _stream_response(agent, user_input: str) -> None:
+    """Print the model's reply token by token as it arrives."""
+    print("\nLiz: ", end="", flush=True)
+
+    printed_any = False
+    for chunk in agent.stream_chat(user_input):
+        if chunk.tool_events:
+            if printed_any:
+                print()
+            for event in chunk.tool_events:
+                print(f"  ⚙ {event}", flush=True)
+            print("Liz: ", end="", flush=True)
+            continue
+
+        if chunk.text:
+            print(chunk.text, end="", flush=True)
+            printed_any = True
+
+    print()
+
+
 def run_cli() -> None:
     settings = Settings()
     system_prompt = load_system_prompt()
@@ -106,8 +127,7 @@ def run_cli() -> None:
                 break
 
             try:
-                response = agent.chat(user_input)
-                print(f"\nLiz: {response}\n")
+                _stream_response(agent, user_input)
             except Exception as e:
                 print(f"\nError: {e}\n")
     finally:

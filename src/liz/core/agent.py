@@ -1,13 +1,20 @@
+from typing import Iterator
+
 from liz.config.settings import Settings
 from liz.core.context import Context
 from liz.core.memory import ConversationMemory
-from liz.core.models import Message, Role, ToolCall
+from liz.core.models import AIResponse, Message, Role, StreamChunk, ToolCall
 from liz.infrastructure.ai.base import AIProvider
 from liz.infrastructure.ai.factory import create_provider
 from liz.tools.registry import ToolRegistry
 from liz.tools.models import ToolStatus
 
 MAX_TOOL_ROUNDS = 5
+
+
+def _short_args(tool_call: ToolCall, limit: int = 40) -> str:
+    text = ", ".join(f"{k}={v!r}" for k, v in tool_call.arguments.items())
+    return text if len(text) <= limit else text[: limit - 3] + "..."
 
 
 class Agent:
@@ -73,6 +80,74 @@ class Agent:
         self.context.clear()
         if self.memory is not None:
             self.memory.clear()
+
+    def stream_chat(self, user_input: str) -> Iterator[StreamChunk]:
+        """Stream a reply, executing tools between rounds when needed.
+
+        Text chunks are forwarded as they arrive. When the model asks
+        for tools, the results are fed back and a new round is streamed;
+        tool activity is reported through `tool_events`.
+        """
+        self.context.add_user_message(user_input)
+        if self.memory is not None:
+            self.memory.remember(Message(role=Role.USER, content=user_input))
+
+        tools = self.tool_registry.get_tool_schemas() if self.tool_registry else None
+
+        for _ in range(MAX_TOOL_ROUNDS):
+            text_parts: list[str] = []
+            final: AIResponse | None = None
+
+            for chunk in self.provider.stream_chat(
+                messages=self.context.get_messages(),
+                tools=tools,
+            ):
+                if chunk.text:
+                    text_parts.append(chunk.text)
+                if chunk.done:
+                    final = chunk.response
+                yield chunk
+
+            if final is None:
+                final = AIResponse(
+                    content="".join(text_parts),
+                    model=self.provider.model
+                    if hasattr(self.provider, "model") else "",
+                    tool_calls=[],
+                )
+
+            if not final.tool_calls:
+                self.context.add_assistant_message(final.content)
+                if self.memory is not None:
+                    self.memory.remember(
+                        Message(role=Role.ASSISTANT, content=final.content)
+                    )
+                return
+
+            self.context.add_assistant_message(final.content or "")
+
+            events: list[str] = []
+            for tool_call in final.tool_calls:
+                result = self._execute_tool(tool_call)
+                events.append(f"{tool_call.name}({_short_args(tool_call)})")
+                self._add_tool_result(tool_call, result)
+
+            yield StreamChunk(tool_events=events)
+
+        final_response = self.provider.chat(
+            messages=self.context.get_messages(),
+            tools=tools,
+        )
+        self.context.add_assistant_message(final_response.content)
+        if self.memory is not None:
+            self.memory.remember(
+                Message(role=Role.ASSISTANT, content=final_response.content)
+            )
+        yield StreamChunk(
+            text=final_response.content,
+            done=True,
+            response=final_response,
+        )
 
     def _execute_tool(self, tool_call: ToolCall) -> str:
         if self.tool_registry is None:

@@ -5,9 +5,9 @@ different model, so a missing model or an exhausted quota degrades into
 the next candidate instead of failing the whole request.
 """
 
-from typing import Any
+from typing import Any, Iterator
 
-from liz.core.models import AIResponse, Message
+from liz.core.models import AIResponse, Message, StreamChunk
 from liz.infrastructure.ai.base import AIProvider
 
 RETRYABLE_MARKERS = (
@@ -58,6 +58,28 @@ class FallbackProvider(AIProvider):
                 return provider.chat(messages, tools)
             except Exception as error:
                 if is_last or not is_retryable(error):
+                    raise
+                last_error = error
+
+        raise last_error if last_error else RuntimeError("No providers available")
+
+    def stream_chat(
+        self,
+        messages: list[Message],
+        tools: list[dict[str, Any]] | None = None,
+    ) -> Iterator[StreamChunk]:
+        last_error: Exception | None = None
+
+        for index, provider in enumerate(self.providers):
+            is_last = index == len(self.providers) - 1
+            started = False
+            try:
+                for chunk in provider.stream_chat(messages, tools):
+                    started = True
+                    yield chunk
+                return
+            except Exception as error:
+                if started or is_last or not is_retryable(error):
                     raise
                 last_error = error
 

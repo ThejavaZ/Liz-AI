@@ -237,7 +237,7 @@ class TestDeepSeekProvider:
         with pytest.raises(ValueError, match="DeepSeek API key is required"):
             DeepSeekProvider(api_key="", model="test-model")
 
-    @patch("liz.infrastructure.ai.deepseek.OpenAI")
+    @patch("liz.infrastructure.ai.openai.OpenAI")
     def test_creates_client(self, mock_client_class: MagicMock) -> None:
         provider = DeepSeekProvider(api_key="test-key", model="deepseek-chat")
         mock_client_class.assert_called_once_with(
@@ -246,7 +246,7 @@ class TestDeepSeekProvider:
         )
         assert provider.model == "deepseek-chat"
 
-    @patch("liz.infrastructure.ai.deepseek.OpenAI")
+    @patch("liz.infrastructure.ai.openai.OpenAI")
     def test_chat_returns_response(self, mock_client_class: MagicMock) -> None:
         mock_client = MagicMock()
         mock_client_class.return_value = mock_client
@@ -272,7 +272,7 @@ class TestDeepSeekProvider:
         assert result.usage["input_tokens"] == 10
         assert result.usage["output_tokens"] == 5
 
-    @patch("liz.infrastructure.ai.deepseek.OpenAI")
+    @patch("liz.infrastructure.ai.openai.OpenAI")
     def test_chat_formats_messages(self, mock_client_class: MagicMock) -> None:
         mock_client = MagicMock()
         mock_client_class.return_value = mock_client
