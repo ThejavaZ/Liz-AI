@@ -1,0 +1,67 @@
+name: Feature request
+description: Propose a new capability for Liz
+title: "feat: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Liz aims to be a **lightweight, local-first personal assistant**:
+        no heavy ML libraries, stdlib `sqlite3` for persistence, and every
+        new dependency must be justified. Please read
+        [`AGENTS.md`](https://github.com/ThejavaZ/Liz-AI/blob/main/AGENTS.md)
+        before proposing.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do that Liz cannot do today?
+      placeholder: I want Liz to notify me when a build finishes...
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How should it work from the user's point of view?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches you thought about, and why they fall short.
+
+  - type: dropdown
+    id: phase
+    attributes:
+      label: Roadmap fit
+      description: Does this match an existing roadmap phase?
+      options:
+        - Matches an existing phase (say which below)
+        - New idea, not on the roadmap yet
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: New dependencies
+      description: |
+        Does the proposal need a new package? Justify size, maintenance
+        and why the standard library is not enough (AGENTS.md rule 4).
+      placeholder: None — stdlib only. / `x>=1.0` because ...
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I read AGENTS.md and the proposal respects its rules (no heavy ML, no telemetry, local-first)
+          required: true
+        - label: I searched existing issues and roadmap phases for duplicates
+          required: true

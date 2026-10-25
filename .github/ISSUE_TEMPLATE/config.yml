@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation (README)
+    url: https://github.com/ThejavaZ/Liz-AI#readme
+    about: Setup, architecture, commands, voice and security guides.
+  - name: Roadmap
+    url: https://github.com/ThejavaZ/Liz-AI#roadmap
+    about: Check which phases are done and what is planned before filing a feature request.
+  - name: Agent contract (AGENTS.md)
+    url: https://github.com/ThejavaZ/Liz-AI/blob/main/AGENTS.md
+    about: Rules for contributors and coding agents working on Liz-AI.

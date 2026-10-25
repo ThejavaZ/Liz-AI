@@ -1,0 +1,77 @@
+name: Security report
+description: Report a vulnerability in permissions, sandbox, tools or data handling
+title: "security: "
+labels: ["security"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Please do not disclose a vulnerability in a public issue.**
+
+        Prefer GitHub's private reporting: *Security* tab →
+        *Report a vulnerability*. If that is unavailable, open the issue
+        with **no exploit details** and mention you can be contacted
+        privately.
+
+        Liz runs commands and reads files on your machine, so reports
+        about the permission layer, the path sandbox (`FS_ROOTS`) and the
+        terminal allowlist are especially welcome.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - Permission layer / confirmation flow
+        - Path sandbox (FS_ROOTS)
+        - Terminal allowlist / run_command
+        - Filesystem tools
+        - Memory / notes / session data
+        - Voice (audio capture, transcription)
+        - Provider keys or configuration
+        - CI / supply chain
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: summary
+    attributes:
+      label: Short summary
+      description: One line, no exploit details.
+      placeholder: Path sandbox can be escaped through ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact
+      description: What could an attacker or a malicious prompt achieve?
+      placeholder: Read files outside the allowed roots, execute unallowed commands...
+    validations:
+      required: true
+
+  - type: textarea
+    id: version
+    attributes:
+      label: Affected version / commit
+      placeholder: commit b4d2b85 / latest main
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed-fix
+    attributes:
+      label: Proposed fix (optional)
+      description: Suggestions or a draft patch are welcome.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I am not including secrets, private keys or personal data in this report
+          required: true
+        - label: I understand exploit details should wait for private contact
+          required: true

@@ -1,0 +1,67 @@
+name: Task
+description: Chores, CI, docs, performance, refactors and tests
+title: "chore: "
+labels: ["task"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for work that is not a new feature and not a bug:
+        maintenance, CI changes, documentation, performance, refactors or
+        tests. Please search [existing issues](https://github.com/ThejavaZ/Liz-AI/issues)
+        first and skim [`AGENTS.md`](https://github.com/ThejavaZ/Liz-AI/blob/main/AGENTS.md).
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind of task
+      options:
+        - chore (tooling, config, cleanup)
+        - ci (workflows, pipelines)
+        - docs (README, AGENTS.md, comments)
+        - perf (performance)
+        - refactor (no behavior change)
+        - test (add or improve tests)
+        - other
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What and why
+      description: The change and the reason it is worth doing.
+      placeholder: The test suite takes 40s because ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: files
+    attributes:
+      label: Files affected
+      description: Files you expect to touch.
+      placeholder: |
+        - tests/test_voice.py
+        - .github/workflows/ci.yml
+
+  - type: textarea
+    id: verify
+    attributes:
+      label: How to verify
+      description: Commands or steps a reviewer can run.
+      placeholder: |
+        1. `python -m pytest tests/ -q`
+        2. Check the Actions tab runs the workflow
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues for duplicates
+          required: true
+        - label: The full test suite passes locally (`python -m pytest tests/ -q`)
+          required: true
+        - label: README / AGENTS.md will be updated if counts or structure change
