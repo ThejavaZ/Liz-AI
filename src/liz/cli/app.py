@@ -16,6 +16,7 @@ from liz.tools.web import WebSearch
 from liz.tools.notes import Notes
 from liz.tools.memory import Memory as MemoryTool
 from liz.cli.commands import CommandHandler
+from liz.cli.markdown import MarkdownRenderer
 
 
 def load_system_prompt() -> str:
@@ -88,9 +89,20 @@ def _stream_response(agent, user_input: str) -> None:
     """Print the model's reply token by token as it arrives."""
     print("\nLiz: ", end="", flush=True)
 
+    renderer = MarkdownRenderer()
     printed_any = False
+
+    def _emit(text: str) -> None:
+        nonlocal printed_any
+        if text:
+            print(text, end="", flush=True)
+            printed_any = True
+
     for chunk in agent.stream_chat(user_input):
         if chunk.tool_events:
+            # flush the pending line first so the tool activity does not
+            # swallow part of the answer
+            _emit(renderer.flush())
             if printed_any:
                 print()
             for event in chunk.tool_events:
@@ -99,9 +111,9 @@ def _stream_response(agent, user_input: str) -> None:
             continue
 
         if chunk.text:
-            print(chunk.text, end="", flush=True)
-            printed_any = True
+            _emit(renderer.feed(chunk.text))
 
+    _emit(renderer.flush())
     print()
 
 
