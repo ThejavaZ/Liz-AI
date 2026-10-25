@@ -15,7 +15,7 @@ Ollama models).
 ```bash
 source .venv/bin/activate
 python main.py                     # run the CLI
-python -m pytest tests/ -q         # run the test suite (536 tests, must all pass)
+python -m pytest tests/ -q         # run the test suite (584 tests, must all pass)
 python -m pytest tests/ -v -k name # run one test file or case
 ```
 
@@ -57,7 +57,8 @@ src/liz/
 ├── tools/                 # Tool implementations
 │   ├── base.py / models.py  # Tool ABC, ToolResult, ToolStatus
 │   ├── registry.py        # ToolRegistry (single source of truth for /tools)
-│   ├── permissions.py     # PermissionLayer: ALLOW / DENY / ASK
+│   ├── permissions.py     # PermissionLayer: ALLOW / DENY / ASK (+ per action)
+│   ├── sandbox.py         # Path roots shared by filesystem and terminal
 │   └── filesystem|git|terminal|calculator|web|notes|memory.py
 └── cli/
     ├── app.py             # Wiring + main loop + streaming output
@@ -126,6 +127,16 @@ tests/                     # pytest suite
   `whisper.cpp/`), TTS is `spd-say` → `espeak-ng` → `espeak`, capture is
   `arecord`. Never add a Python speech/ML dependency. Voice tests synthesize
   PCM and mock subprocesses — they must never touch a real microphone.
+- **Permission model:** rules are built in `app.py::create_tool_registry`
+  (default `ASK`, read-only tools `ALLOW`, `run_command` / `notes:delete` /
+  `memory:forget` ask). `Permission.ASK` **denies** unless the registry has
+  an injected `confirm` callback — the CLI provides an interactive prompt,
+  tests provide fakes or none. Never make `ASK` auto-approve.
+- **Path sandbox:** `tools/sandbox.py` resolves paths (symlinks and `..`)
+  against `FS_ROOTS` (home + cwd by default). Tools constructed without
+  roots are unrestricted — that is only for unit tests; the CLI always
+  passes roots. Any new tool touching the filesystem must use
+  `within_roots()`.
 - **Web search backends:** the `[web]` extra installs `ddgs` (formerly
   `duckduckgo_search`). `_load_ddgs()` in `tools/web.py` accepts both
   names, and DuckDuckGo's HTML endpoint (POST) is tried first because the
@@ -133,7 +144,7 @@ tests/                     # pytest suite
 
 ## Testing
 
-- Every change: `python -m pytest tests/ -q` must end in **536 passed**.
+- Every change: `python -m pytest tests/ -q` must end in **584 passed**.
 - Put new tests in a descriptive `tests/test_<topic>.py`.
 - Reuse `tests/memory_helpers.py::InMemoryStore` for store doubles; do not
   write a fourth copy of an in-memory store.

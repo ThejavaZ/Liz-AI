@@ -118,7 +118,10 @@ class CommandHandler:
 
         lines = ["Available tools:"]
         for tool in tools:
-            lines.append(f"  {tool.name:20s} {tool.description}")
+            permission = self.tool_registry.permissions.check(tool.name)
+            lines.append(
+                f"  {tool.name:20s} [{permission.value:5s}] {tool.description}"
+            )
         return CommandResult(output="\n".join(lines))
 
     def _models(self, args: str = "") -> CommandResult:

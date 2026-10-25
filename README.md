@@ -26,9 +26,11 @@ Built with **modularity, security, and practical AI tooling** in mind.
 - Context summarization when the conversation grows too long
 - Health diagnostics (`/doctor`) and config inspection (`/config`)
 - Voice interaction: speech-to-text (`/talk`), text-to-speech, wake words and a background listener (`/voice on|off`)
+- Permission policy with real confirmation prompts for sensitive tools (`run_command`, note deletion, fact removal)
+- Path sandbox for filesystem access and terminal arguments (`FS_ROOTS`, home + work dir by default)
 - Internal CLI commands (`/help`, `/tools`, `/models`, `/memory`, `/notes`, `/config`, `/doctor`, `/clear`, `/status`)
 - Docker support
-- 536+ automated tests
+- 584+ automated tests
 
 ## Quick Start
 
@@ -204,6 +206,27 @@ WHISPER_MODEL=whisper.cpp/models/ggml-base.bin
 Voice activity detection is an energy threshold over the recorded PCM
 (`core/voice.py`), so silence never reaches the agent.
 
+## Security
+
+Liz runs tools under an explicit policy (see `src/liz/tools/`):
+
+- **Permission policy** (`permissions.py`): every tool has a rule —
+  read-only tools are `allow`; `run_command`, deleting a note and
+  forgetting a fact are `ask`; anything unregistered defaults to `ask`.
+  Rules can be narrowed per action (`notes:delete`).
+- **Confirmation is real** (`registry.py`): `ask` shows an interactive
+  `Allow? [y/N]` prompt with a preview of the request. No prompt
+  available (tests, pipes) means **deny**.
+- **Path sandbox** (`sandbox.py`): filesystem tools and `run_command`
+  arguments are resolved (symlinks and `..` included) and must stay
+  inside the allowed roots — home and the working directory by default,
+  configurable with `FS_ROOTS`.
+- **Terminal allowlist** (`terminal.py`): only a fixed set of safe
+  commands, no shell, 30s timeout, and `find -exec` / `-delete` style
+  escape hatches rejected.
+
+`/tools` shows the effective permission of each tool.
+
 ## Architecture
 
 ```text
@@ -253,11 +276,12 @@ src/liz/
 └── tools/
     ├── base.py         # Tool interface
     ├── models.py       # ToolResult, ToolStatus
-    ├── registry.py     # ToolRegistry
-    ├── permissions.py  # PermissionLayer
-    ├── filesystem.py   # File operations
+    ├── registry.py     # ToolRegistry + ask confirmation
+    ├── permissions.py  # PermissionLayer (per tool and per action)
+    ├── sandbox.py      # Path roots shared by fs and terminal tools
+    ├── filesystem.py   # File operations (sandboxed)
     ├── git.py          # Git operations
-    ├── terminal.py     # Shell commands
+    ├── terminal.py     # Allowlisted commands (sandboxed args)
     ├── calculator.py   # Safe math evaluation
     ├── web.py          # Web search
     └── notes.py        # Notes tool
@@ -298,6 +322,8 @@ tests/
 ├── test_registry.py           # Tool registry
 ├── test_tool_models.py        # Tool result models
 ├── test_tool_calling.py       # Agent-tool integration
+├── test_voice.py              # Voice: VAD, wake word, engines, loop
+├── test_security.py           # Confirmations, path sandbox, terminal args
 └── test_commands.py           # CLI commands
 ```
 

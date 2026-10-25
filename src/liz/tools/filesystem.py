@@ -1,12 +1,33 @@
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 from liz.tools.base import Tool
 from liz.tools.models import ToolResult
+from liz.tools.sandbox import format_roots, within_roots
 
 
-class ListDirectory(Tool):
+class _SandboxedTool(Tool):
+    """Base for tools whose paths must stay inside the allowed roots."""
+
+    def __init__(self, roots: Sequence[Path | str] | None = None) -> None:
+        self.roots = list(roots) if roots else None
+
+    def check_path(self, path: str) -> tuple[Path | None, ToolResult | None]:
+        """Resolve and validate a path.
+
+        Returns ``(resolved, None)`` when allowed, else ``(None, error)``.
+        """
+        allowed, resolved = within_roots(path, self.roots)
+        if allowed:
+            return resolved, None
+        return None, ToolResult.error(
+            f"Path outside allowed directories: {resolved}. "
+            f"Allowed: {format_roots(self.roots)} (extend with FS_ROOTS)"
+        )
+
+
+class ListDirectory(_SandboxedTool):
     @property
     def name(self) -> str:
         return "list_directory"
@@ -30,7 +51,11 @@ class ListDirectory(Tool):
 
     def execute(self, path: str = ".") -> ToolResult:
         try:
-            target = Path(path)
+            target, denied = self.check_path(path)
+            if denied is not None:
+                return denied
+            assert target is not None
+
             if not target.exists():
                 return ToolResult.error(f"Path does not exist: {path}")
             if not target.is_dir():
@@ -53,7 +78,7 @@ class ListDirectory(Tool):
             return ToolResult.error(f"Error listing directory: {e}")
 
 
-class ReadFile(Tool):
+class ReadFile(_SandboxedTool):
     @property
     def name(self) -> str:
         return "read_file"
@@ -77,7 +102,11 @@ class ReadFile(Tool):
 
     def execute(self, path: str) -> ToolResult:
         try:
-            target = Path(path)
+            target, denied = self.check_path(path)
+            if denied is not None:
+                return denied
+            assert target is not None
+
             if not target.exists():
                 return ToolResult.error(f"File does not exist: {path}")
             if not target.is_file():
@@ -91,7 +120,7 @@ class ReadFile(Tool):
             return ToolResult.error(f"Error reading file: {e}")
 
 
-class FileExists(Tool):
+class FileExists(_SandboxedTool):
     @property
     def name(self) -> str:
         return "file_exists"
@@ -115,7 +144,11 @@ class FileExists(Tool):
 
     def execute(self, path: str) -> ToolResult:
         try:
-            target = Path(path)
+            target, denied = self.check_path(path)
+            if denied is not None:
+                return denied
+            assert target is not None
+
             if target.exists():
                 file_type = "directory" if target.is_dir() else "file"
                 return ToolResult.success(f"Exists ({file_type}): {path}")

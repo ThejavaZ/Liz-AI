@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     whisper_bin: str | None = None
     whisper_model: str | None = None
 
+    # security: comma-separated directories the tools may touch;
+    # empty = home + working directory
+    fs_roots: str = ""
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

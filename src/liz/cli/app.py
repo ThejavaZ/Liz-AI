@@ -19,6 +19,29 @@ from liz.cli.commands import CommandHandler
 from liz.cli.markdown import MarkdownRenderer
 from liz.cli.voice import create_voice_loop
 
+# Read-only or self-contained tools: never prompt the user for these.
+ALWAYS_ALLOWED_TOOLS = (
+    "list_directory",
+    "read_file",
+    "file_exists",
+    "git_status",
+    "git_log",
+    "git_branch",
+    "calculator",
+    "web_search",
+    "notes",
+    "memory",
+)
+
+# Everything else (unknown future tools included) falls back to ASK.
+ASK_RULES = (
+    ("run_command", None),
+    ("notes", "delete"),
+    ("memory", "forget"),
+)
+
+_CONFIRM_ANSWERS = {"y", "yes", "s", "si", "sí"}
+
 
 def load_system_prompt() -> str:
     prompt_path = "prompts/liz.txt"
@@ -29,18 +52,51 @@ def load_system_prompt() -> str:
         return "You are Liz, a helpful AI assistant."
 
 
-def create_tool_registry(notes_store=None, memory=None) -> ToolRegistry:
-    permissions = PermissionLayer()
-    permissions.set_default(Permission.ALLOW)
+def parse_fs_roots(settings: Settings) -> list[Path]:
+    """Directories the tools may touch: FS_ROOTS, else home + cwd."""
+    raw = settings.fs_roots.strip()
+    if raw:
+        return [
+            Path(part.strip()).expanduser()
+            for part in raw.split(",")
+            if part.strip()
+        ]
+    return [Path.home(), Path.cwd()]
 
-    registry = ToolRegistry(permissions=permissions)
-    registry.register(ListDirectory())
-    registry.register(ReadFile())
-    registry.register(FileExists())
+
+def confirm_tool_request(tool_name: str, preview: str) -> bool:
+    """Interactive yes/no prompt for tools marked ASK."""
+    detail = f" ({preview})" if preview else ""
+    try:
+        answer = input(f"\n  ⚠ Liz wants to use {tool_name}{detail}. "
+                       "Allow? [y/N] ")
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return False
+    return answer.strip().lower() in _CONFIRM_ANSWERS
+
+
+def create_tool_registry(
+    notes_store=None,
+    memory=None,
+    roots: list[Path] | None = None,
+    confirm=None,
+) -> ToolRegistry:
+    permissions = PermissionLayer()
+    permissions.set_default(Permission.ASK)
+    for tool_name in ALWAYS_ALLOWED_TOOLS:
+        permissions.set_rule(tool_name, Permission.ALLOW)
+    for tool_name, action in ASK_RULES:
+        permissions.set_rule(tool_name, Permission.ASK, action=action)
+
+    registry = ToolRegistry(permissions=permissions, confirm=confirm)
+    registry.register(ListDirectory(roots))
+    registry.register(ReadFile(roots))
+    registry.register(FileExists(roots))
     registry.register(GitStatus())
     registry.register(GitLog())
     registry.register(GitBranch())
-    registry.register(RunCommand())
+    registry.register(RunCommand(roots=roots))
     registry.register(Calculator())
     registry.register(WebSearch())
 
@@ -123,7 +179,12 @@ def run_cli() -> None:
     system_prompt = load_system_prompt()
     notes_store = create_notes_store(settings)
     memory = create_memory(settings)
-    tool_registry = create_tool_registry(notes_store, memory)
+    tool_registry = create_tool_registry(
+        notes_store,
+        memory,
+        roots=parse_fs_roots(settings),
+        confirm=confirm_tool_request,
+    )
     agent = Agent(
         settings,
         system_prompt,
