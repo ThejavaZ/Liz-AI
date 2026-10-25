@@ -15,7 +15,7 @@ Ollama models).
 ```bash
 source .venv/bin/activate
 python main.py                     # run the CLI
-python -m pytest tests/ -q         # run the test suite (460 tests, must all pass)
+python -m pytest tests/ -q         # run the test suite (536 tests, must all pass)
 python -m pytest tests/ -v -k name # run one test file or case
 ```
 
@@ -40,7 +40,7 @@ src/liz/
 │   ├── summarizer.py      # ContextSummarizer (collapses old turns)
 │   ├── models.py          # Message, AIResponse, StreamChunk, ToolCall, Role
 │   ├── notes.py           # Notes domain port
-│   └── notes.py / models  # shared domain types
+│   └── voice.py           # STT/TTS ports + VAD and wake word policies
 ├── config/
 │   └── settings.py        # Pydantic settings (env + .env)
 ├── infrastructure/
@@ -53,7 +53,7 @@ src/liz/
 │   ├── persistence/       # SQLite adapters (stdlib sqlite3 ONLY)
 │   │   ├── memory_store.py    # messages, facts, meta tables
 │   │   └── notes_store.py
-│   └── voice/             # Empty stubs reserved for Phase 7
+│   └── voice/             # arecord capture, whisper.cpp STT, TTS engines
 ├── tools/                 # Tool implementations
 │   ├── base.py / models.py  # Tool ABC, ToolResult, ToolStatus
 │   ├── registry.py        # ToolRegistry (single source of truth for /tools)
@@ -62,6 +62,7 @@ src/liz/
 └── cli/
     ├── app.py             # Wiring + main loop + streaming output
     ├── markdown.py        # ANSI Markdown renderer for streamed replies
+    ├── voice.py           # VoiceLoop: one turn + background listener thread
     └── commands.py        # Internal `/` commands via CommandResult
 
 prompts/liz.txt            # System prompt loaded at startup
@@ -120,8 +121,11 @@ tests/                     # pytest suite
   Ollama reuses the OpenAI SDK with `base_url` — do not add a new dependency.
 - **Unknown models:** startup warns when `AI_MODEL` is not in
   `models_registry.list_models()` because every call pays a failed request.
-- **Empty stubs:** `src/liz/infrastructure/voice/*.py` are placeholders for
-  Phase 7; do not delete them.
+- **Voice engines are external binaries.** STT is `whisper.cpp` invoked by
+  subprocess (`WHISPER_BIN` / `WHISPER_MODEL` or auto-detected under
+  `whisper.cpp/`), TTS is `spd-say` → `espeak-ng` → `espeak`, capture is
+  `arecord`. Never add a Python speech/ML dependency. Voice tests synthesize
+  PCM and mock subprocesses — they must never touch a real microphone.
 - **Web search backends:** the `[web]` extra installs `ddgs` (formerly
   `duckduckgo_search`). `_load_ddgs()` in `tools/web.py` accepts both
   names, and DuckDuckGo's HTML endpoint (POST) is tried first because the
@@ -129,7 +133,7 @@ tests/                     # pytest suite
 
 ## Testing
 
-- Every change: `python -m pytest tests/ -q` must end in **460 passed**.
+- Every change: `python -m pytest tests/ -q` must end in **536 passed**.
 - Put new tests in a descriptive `tests/test_<topic>.py`.
 - Reuse `tests/memory_helpers.py::InMemoryStore` for store doubles; do not
   write a fourth copy of an in-memory store.
@@ -145,11 +149,11 @@ tests/                     # pytest suite
 
 ## Roadmap Status
 
-Phases 1–6 are complete (see `README.md` → Roadmap):
+Phases 1–7 are complete (see `README.md` → Roadmap):
 
 1. Foundation ✅ 2. Tools ✅ 3. CLI ✅ 4. Memory ✅
-5. Practical Tools ✅ 6. Conversation Quality ✅
+5. Practical Tools ✅ 6. Conversation Quality ✅ 7. Voice ✅
 
-Next: **Phase 7 — Voice** (speech-to-text, text-to-speech, wake word).
+Next: **Phase 8 — Proactivity** (event monitors, scheduled tasks).
 After any change, update the corresponding README checkboxes/counts if a
 roadmap item was completed.

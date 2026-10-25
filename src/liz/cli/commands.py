@@ -8,6 +8,8 @@ from liz.config.settings import Settings
 from liz.core.agent import Agent
 from liz.core.context import Context
 from liz.core.notes import NotesStore
+from liz.core.voice import VoiceError
+from liz.cli.voice import VoiceLoop
 from liz.infrastructure.ai.base import AIProvider
 from liz.infrastructure.ai.models_registry import (
     DEFAULT_MODELS,
@@ -39,6 +41,7 @@ class CommandHandler:
         provider: AIProvider | None = None,
         agent: Agent | None = None,
         notes_store: NotesStore | None = None,
+        voice: VoiceLoop | None = None,
     ) -> None:
         self.settings = settings
         self.context = context
@@ -46,6 +49,7 @@ class CommandHandler:
         self.provider = provider
         self.agent = agent
         self.notes_store = notes_store
+        self.voice = voice
         self._commands: dict[str, callable] = {
             "help": self._help,
             "tools": self._tools,
@@ -58,6 +62,8 @@ class CommandHandler:
             "recall": self._recall,
             "export": self._export,
             "import": self._import,
+            "voice": self._voice,
+            "talk": self._talk,
             "config": self._config,
             "doctor": self._doctor,
             "clear": self._clear,
@@ -95,6 +101,8 @@ class CommandHandler:
   /export   Save history to JSON: /export [archivo.json]
   /import   Load history from JSON: /import <archivo.json>
   /notes    Manage notes: list | add <title> | del <id> | find <text>
+  /talk     One voice turn: record, transcribe, answer aloud
+  /voice    Voice status, or /voice on | off for the background listener
   /config   Show effective configuration
   /doctor   Run health diagnostics
   /clear    Clear conversation history
@@ -367,6 +375,97 @@ class CommandHandler:
         return CommandResult(
             output=f"Imported {count} messages into session "
                    f"'{memory.session_id}'"
+        )
+
+    def _voice(self, args: str = "") -> CommandResult:
+        if self.voice is None:
+            return CommandResult(output="Voice support is not enabled.")
+
+        voice = self.voice
+        action = args.strip().lower()
+
+        if action == "on":
+            if not voice.stt.available():
+                return CommandResult(output=self._stt_install_help())
+            if voice.running:
+                return CommandResult(
+                    output="The voice listener is already running."
+                )
+            voice.start()
+            return CommandResult(
+                output=f"Voice on. Say {voice.wake_words[0]!r} to talk to "
+                "Liz; /voice off stops it."
+            )
+
+        if action == "off":
+            was_running = voice.running
+            voice.stop()
+            return CommandResult(
+                output="Voice off."
+                if was_running
+                else "The voice listener was not running."
+            )
+
+        if action:
+            return CommandResult(output="Usage: /voice [on|off]")
+
+        return CommandResult(output=self._voice_status())
+
+    def _voice_status(self) -> str:
+        voice = self.voice
+        settings = self.settings
+
+        stt_detail = voice.stt.name if voice.stt.available() else "not installed"
+
+        engines = getattr(voice.tts, "engines", None) or [voice.tts]
+        tts_detail = ", ".join(
+            engine.name for engine in engines if engine.available()
+        ) or "not installed"
+
+        lines = [
+            "Voice",
+            f"  STT:        {stt_detail}",
+            f"  TTS:        {tts_detail}",
+            f"  Language:   {settings.voice_language}",
+            f"  Record:     {settings.voice_record_seconds}s per window",
+            "  Wake words: " + ", ".join(repr(w) for w in voice.wake_words),
+            f"  Listener:   {'running' if voice.running else 'stopped'}",
+            "",
+            "  /talk           one voice turn",
+            "  /voice on|off    background listener",
+        ]
+        if not voice.stt.available():
+            lines += ["", self._stt_install_help()]
+        return "\n".join(lines)
+
+    @staticmethod
+    def _stt_install_help() -> str:
+        return (
+            "No speech-to-text engine yet. Install whisper.cpp:\n"
+            "  git clone https://github.com/ggml-org/whisper.cpp\n"
+            "  cmake -B whisper.cpp/build -S whisper.cpp\n"
+            "  cmake --build whisper.cpp/build -j\n"
+            "  bash whisper.cpp/models/download-ggml-model.sh base\n"
+            "Liz finds both automatically under whisper.cpp/, or you can "
+            "point WHISPER_BIN and WHISPER_MODEL at them in .env."
+        )
+
+    def _talk(self, args: str = "") -> CommandResult:
+        if self.voice is None:
+            return CommandResult(output="Voice support is not enabled.")
+        if not self.voice.stt.available():
+            return CommandResult(output=self._stt_install_help())
+
+        try:
+            turn = self.voice.step(require_wake_word=False)
+        except VoiceError as error:
+            return CommandResult(output=f"Voice error: {error}")
+
+        if turn is None:
+            return CommandResult(output="No voice detected in the recording.")
+
+        return CommandResult(
+            output=f'You said: "{turn.transcript}"\nLiz: {turn.reply}'
         )
 
     def _config(self, args: str = "") -> CommandResult:

@@ -17,6 +17,7 @@ from liz.tools.notes import Notes
 from liz.tools.memory import Memory as MemoryTool
 from liz.cli.commands import CommandHandler
 from liz.cli.markdown import MarkdownRenderer
+from liz.cli.voice import create_voice_loop
 
 
 def load_system_prompt() -> str:
@@ -129,6 +130,11 @@ def run_cli() -> None:
         tool_registry=tool_registry,
         memory=memory,
     )
+    voice = create_voice_loop(
+        agent,
+        settings,
+        on_event=lambda message: print(message, flush=True),
+    )
     commands = CommandHandler(
         settings,
         agent.context,
@@ -136,6 +142,7 @@ def run_cli() -> None:
         provider=agent.provider,
         agent=agent,
         notes_store=notes_store,
+        voice=voice,
     )
 
     model = getattr(agent.provider, "active", agent.provider).model
@@ -172,6 +179,7 @@ def run_cli() -> None:
             except Exception as e:
                 print(f"\nError: {e}\n")
     finally:
+        voice.stop()
         memory.close()
         notes_store.close()
 

@@ -25,9 +25,10 @@ Built with **modularity, security, and practical AI tooling** in mind.
 - Export / import conversation history as JSON (`/export`, `/import`)
 - Context summarization when the conversation grows too long
 - Health diagnostics (`/doctor`) and config inspection (`/config`)
+- Voice interaction: speech-to-text (`/talk`), text-to-speech, wake words and a background listener (`/voice on|off`)
 - Internal CLI commands (`/help`, `/tools`, `/models`, `/memory`, `/notes`, `/config`, `/doctor`, `/clear`, `/status`)
 - Docker support
-- 460+ automated tests
+- 536+ automated tests
 
 ## Quick Start
 
@@ -91,6 +92,8 @@ Internal commands are available without calling the AI provider:
 | `/export` | Save history to JSON: `/export [file.json]`  |
 | `/import` | Load history from JSON: `/import <file.json>`|
 | `/notes`  | Manage notes: `list` / `add` / `del` / `find`|
+| `/talk`   | One voice turn: record, transcribe, answer aloud |
+| `/voice`  | Voice status, or `/voice on` / `off` for the listener |
 | `/config` | Show effective configuration (keys masked)   |
 | `/doctor` | Run health diagnostics                       |
 | `/clear`  | Clear conversation history                   |
@@ -159,6 +162,48 @@ Tools are controlled by a permission layer (ALLOW/DENY/ASK).
 optional `ddgs` package when installed (formerly `duckduckgo-search`) as
 a backup, so it works either way.
 
+## Voice
+
+Voice runs entirely locally through external binaries — no Python ML
+dependency. Every piece is optional: missing engines degrade to clear
+messages instead of failing.
+
+| Piece | Engine | How Liz finds it |
+|-------|--------|------------------|
+| Capture | `arecord` (ALSA) | `PATH` |
+| Speech-to-text | whisper.cpp | `WHISPER_BIN` / `WHISPER_MODEL`, or auto-detected under `whisper.cpp/` |
+| Text-to-speech | `spd-say` → `espeak-ng` → `espeak` | first one installed wins |
+
+Install the pieces you want:
+
+```bash
+sudo apt install espeak-ng            # TTS (dependable fallback)
+git clone https://github.com/ggml-org/whisper.cpp
+cmake -B whisper.cpp/build -S whisper.cpp
+cmake --build whisper.cpp/build -j    # STT binary
+bash whisper.cpp/models/download-ggml-model.sh base   # ~74 MB model
+```
+
+Then, inside Liz:
+
+- `/talk` — one turn: record a window, transcribe it, answer aloud
+- `/voice on` — background listener; say a wake word ("hola liz") first
+- `/voice off` — stop listening
+- `/voice` — status of engines, language, wake words and listener
+
+Tuning in `.env`:
+
+```env
+VOICE_LANGUAGE=es            # STT/TTS language
+VOICE_RECORD_SECONDS=5       # length of each listening window
+VOICE_WAKE_WORDS=hola liz, hey liz
+WHISPER_BIN=whisper.cpp/build/bin/whisper-cli
+WHISPER_MODEL=whisper.cpp/models/ggml-base.bin
+```
+
+Voice activity detection is an energy threshold over the recorded PCM
+(`core/voice.py`), so silence never reaches the agent.
+
 ## Architecture
 
 ```text
@@ -175,6 +220,8 @@ CLI → CommandHandler (internal commands)
 src/liz/
 ├── cli/
 │   ├── app.py          # CLI entry point
+│   ├── markdown.py     # ANSI renderer for streamed replies
+│   ├── voice.py        # VoiceLoop: turns + background listener
 │   └── commands.py     # Internal commands handler
 ├── config/
 │   └── settings.py     # Pydantic settings
@@ -183,6 +230,7 @@ src/liz/
 │   ├── context.py      # Conversation context
 │   ├── memory.py       # Memory port + ConversationMemory
 │   ├── notes.py        # Notes port + Note
+│   ├── voice.py        # STT/TTS ports + VAD and wake word policies
 │   └── models.py       # Domain models
 ├── infrastructure/
 │   ├── ai/
@@ -195,9 +243,13 @@ src/liz/
 │   │   ├── claude.py         # Anthropic Claude
 │   │   ├── deepseek.py       # DeepSeek
 │   │   └── ollama.py         # Local models via Ollama
-│   └── persistence/
-│       ├── memory_store.py   # SQLiteMemoryStore
-│       └── notes_store.py    # SQLiteNotesStore
+│   ├── persistence/
+│   │   ├── memory_store.py   # SQLiteMemoryStore
+│   │   └── notes_store.py    # SQLiteNotesStore
+│   └── voice/
+│       ├── audio.py          # arecord capture + WAV reading
+│       ├── speech_to_text.py # whisper.cpp adapter + factory
+│       └── text_to_speech.py # spd-say / espeak adapters + factory
 └── tools/
     ├── base.py         # Tool interface
     ├── models.py       # ToolResult, ToolStatus
@@ -305,14 +357,14 @@ tests/
 - [x] Export / import conversation history (`/export`, `/import`)
 - [x] Markdown rendering in terminal output (`cli/markdown.py`, stdlib ANSI)
 
-### Phase 7 — Voice
+### Phase 7 — Voice ✅
 
-- [ ] Speech-to-text
-- [ ] Text-to-speech
-- [ ] Voice interaction loop
-- [ ] Wake word / activation ("Hey Liz")
-- [ ] Voice activity detection
-- [ ] Background listening daemon
+- [x] Speech-to-text (whisper.cpp by subprocess, `infrastructure/voice/speech_to_text.py`)
+- [x] Text-to-speech (spd-say → espeak-ng autodetect, `infrastructure/voice/text_to_speech.py`)
+- [x] Voice interaction loop (`/talk`, `cli/voice.py`)
+- [x] Wake word / activation ("Hey Liz", configurable via `VOICE_WAKE_WORDS`)
+- [x] Voice activity detection (energy VAD, stdlib, `core/voice.py`)
+- [x] Background listening daemon (`/voice on|off`)
 
 ### Phase 8 — Proactivity
 

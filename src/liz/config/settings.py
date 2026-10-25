@@ -15,6 +15,13 @@ class Settings(BaseSettings):
 
     data_dir: str = "data"
 
+    # voice (Phase 7)
+    voice_language: str = "es"
+    voice_record_seconds: int = 5
+    voice_wake_words: str = "hola liz, hey liz, oye liz"
+    whisper_bin: str | None = None
+    whisper_model: str | None = None
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
