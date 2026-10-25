@@ -200,6 +200,89 @@ class TestAgentWithMemory:
         assert len(agent.context.get_messages()) == 3
 
 
+class TestFactsInPrompt:
+    """Stored facts must reach the model through the system prompt."""
+
+    def _agent(self, memory, content="hello") -> Agent:
+        settings = Settings(ai_provider="gemini", gemini_api_key="k")
+        with patch("liz.core.agent.create_provider") as mock:
+            mock.return_value = _FakeProvider(content)
+            return Agent(settings, "sys", memory=memory)
+
+    def test_base_prompt_without_facts(self) -> None:
+        agent = self._agent(ConversationMemory(InMemoryStore()))
+        agent.chat("hi")
+        assert agent.context.get_messages()[0].content == "sys"
+
+    def test_facts_are_injected(self) -> None:
+        memory = ConversationMemory(InMemoryStore())
+        memory.learn_fact("primary_language", "spanish")
+        agent = self._agent(memory)
+
+        agent.chat("hola")
+
+        system = agent.context.get_messages()[0].content
+        assert "primary_language: spanish" in system
+
+    def test_fact_learned_mid_chat_reaches_next_turn(self) -> None:
+        memory = ConversationMemory(InMemoryStore())
+        agent = self._agent(memory)
+        agent.chat("first turn")
+        assert "primary_language" not in (
+            agent.context.get_messages()[0].content
+        )
+
+        memory.learn_fact("primary_language", "spanish")
+        agent.chat("second turn")
+
+        assert "primary_language: spanish" in (
+            agent.context.get_messages()[0].content
+        )
+
+    def test_forgotten_fact_leaves_the_prompt(self) -> None:
+        memory = ConversationMemory(InMemoryStore())
+        memory.learn_fact("editor", "neovim")
+        agent = self._agent(memory)
+        agent.chat("hi")
+        assert "editor: neovim" in agent.context.get_messages()[0].content
+
+        memory.forget_fact("editor")
+        agent.chat("hi again")
+
+        assert "editor" not in agent.context.get_messages()[0].content
+
+    def test_stream_chat_syncs_too(self) -> None:
+        memory = ConversationMemory(InMemoryStore())
+        memory.learn_fact("city", "Hermosillo")
+        agent = self._agent(memory)
+
+        list(agent.stream_chat("hola"))
+
+        assert "city: Hermosillo" in agent.context.get_messages()[0].content
+
+    def test_no_memory_leaves_prompt_alone(self) -> None:
+        settings = Settings(ai_provider="gemini", gemini_api_key="k")
+        with patch("liz.core.agent.create_provider") as mock:
+            mock.return_value = _FakeProvider()
+            agent = Agent(settings, "sys")
+
+        agent.chat("hi")
+
+        assert agent.context.get_messages()[0].content == "sys"
+
+    def test_history_keeps_single_system_message(self) -> None:
+        memory = ConversationMemory(InMemoryStore())
+        memory.learn_fact("a", "1")
+        agent = self._agent(memory)
+
+        agent.chat("hi")
+
+        system_count = sum(
+            1 for m in agent.context.get_messages() if m.role is Role.SYSTEM
+        )
+        assert system_count == 1
+
+
 class TestForgetFact:
     def test_forget_existing(self) -> None:
         store = InMemoryStore()

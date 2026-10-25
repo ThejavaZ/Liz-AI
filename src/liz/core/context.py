@@ -42,6 +42,12 @@ class Context:
     def get_messages(self) -> list[Message]:
         return list(self.messages)
 
+    def set_system_prompt(self, content: str) -> None:
+        """Replace the system prompt without disturbing the history."""
+        self.system_prompt = content
+        if self.messages and self.messages[0].role is Role.SYSTEM:
+            self.messages[0] = Message(role=Role.SYSTEM, content=content)
+
     def clear(self) -> None:
         self.messages = [
             Message(role=Role.SYSTEM, content=self.system_prompt)

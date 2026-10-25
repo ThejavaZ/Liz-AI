@@ -472,3 +472,17 @@ class TestWarnUnknownModel:
         settings = Settings(ai_provider="bogus", ai_model="whatever")
         warn_unknown_model(settings)
         assert capsys.readouterr().out == ""
+
+
+class TestSystemPrompt:
+    def test_prompt_forces_users_language(self) -> None:
+        from pathlib import Path
+
+        from liz.cli.app import load_system_prompt
+
+        if not Path("prompts/liz.txt").exists():
+            pytest.skip("prompt file not available")
+
+        prompt = load_system_prompt().lower()
+        assert "language" in prompt
+        assert "spanish" in prompt

@@ -28,6 +28,7 @@ class Agent:
     ) -> None:
         self.settings = settings
         self.provider: AIProvider = create_provider(settings)
+        self._base_prompt = system_prompt
         self.context = Context(system_prompt)
         self.tool_registry = tool_registry
         self.memory = memory
@@ -39,6 +40,27 @@ class Agent:
     def _restore_history(self) -> None:
         for message in self.memory.load_history():
             self.context.messages.append(message)
+
+    def _sync_facts(self) -> None:
+        """Fold stored facts into the system prompt.
+
+        Facts live in SQLite but the model only ever sees the prompt,
+        so without this a remembered fact would not influence replies.
+        """
+        if self.memory is None:
+            return
+
+        facts = self.memory.facts()
+        content = self._base_prompt
+        if facts:
+            lines = "\n".join(
+                f"- {key}: {value}" for key, value in sorted(facts.items())
+            )
+            content += (
+                "\n\nWhat you already know about the user "
+                "(use it instead of asking again):\n" + lines
+            )
+        self.context.set_system_prompt(content)
 
     def _condense(self) -> None:
         """Shrink the context before it grows past the threshold."""
@@ -56,6 +78,7 @@ class Agent:
         return session_id
 
     def chat(self, user_input: str) -> str:
+        self._sync_facts()
         self.context.add_user_message(user_input)
         if self.memory is not None:
             self.memory.remember(Message(role=Role.USER, content=user_input))
@@ -108,6 +131,7 @@ class Agent:
         for tools, the results are fed back and a new round is streamed;
         tool activity is reported through `tool_events`.
         """
+        self._sync_facts()
         self.context.add_user_message(user_input)
         if self.memory is not None:
             self.memory.remember(Message(role=Role.USER, content=user_input))
