@@ -3,23 +3,7 @@ import pytest
 from liz.core.memory import ConversationMemory
 from liz.tools.memory import Memory
 from liz.tools.models import ToolStatus
-
-
-class InMemoryStore:
-    def __init__(self) -> None:
-        self.facts: dict[str, str] = {}
-
-    def save_fact(self, key, value):
-        self.facts[key] = value
-
-    def get_facts(self):
-        return dict(self.facts)
-
-    def delete_fact(self, key):
-        if key in self.facts:
-            del self.facts[key]
-            return True
-        return False
+from tests.memory_helpers import InMemoryStore
 
 
 def _memory() -> tuple[Memory, InMemoryStore]:

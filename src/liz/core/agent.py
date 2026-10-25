@@ -4,6 +4,7 @@ from liz.config.settings import Settings
 from liz.core.context import Context
 from liz.core.memory import ConversationMemory
 from liz.core.models import AIResponse, Message, Role, StreamChunk, ToolCall
+from liz.core.summarizer import ContextSummarizer
 from liz.infrastructure.ai.base import AIProvider
 from liz.infrastructure.ai.factory import create_provider
 from liz.tools.registry import ToolRegistry
@@ -30,6 +31,7 @@ class Agent:
         self.context = Context(system_prompt)
         self.tool_registry = tool_registry
         self.memory = memory
+        self.summarizer = ContextSummarizer(self.provider)
 
         if memory is not None:
             self._restore_history()
@@ -38,12 +40,28 @@ class Agent:
         for message in self.memory.load_history():
             self.context.messages.append(message)
 
+    def _condense(self) -> None:
+        """Shrink the context before it grows past the threshold."""
+        if self.summarizer.should_summarize(self.context):
+            self.summarizer.summarize(self.context)
+
+    def switch_session(self, session_id: str) -> str:
+        """Move the conversation to a named session."""
+        if self.memory is None:
+            return session_id
+
+        self.memory.switch(session_id)
+        self.context.clear()
+        self._restore_history()
+        return session_id
+
     def chat(self, user_input: str) -> str:
         self.context.add_user_message(user_input)
         if self.memory is not None:
             self.memory.remember(Message(role=Role.USER, content=user_input))
 
         tools = self.tool_registry.get_tool_schemas() if self.tool_registry else None
+        self._condense()
 
         for _ in range(MAX_TOOL_ROUNDS):
             response = self.provider.chat(
@@ -95,6 +113,7 @@ class Agent:
             self.memory.remember(Message(role=Role.USER, content=user_input))
 
         tools = self.tool_registry.get_tool_schemas() if self.tool_registry else None
+        self._condense()
 
         for _ in range(MAX_TOOL_ROUNDS):
             text_parts: list[str] = []

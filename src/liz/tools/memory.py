@@ -23,7 +23,7 @@ class Memory(Tool):
 
     @property
     def description(self) -> str:
-        return "Remember or forget facts about the user that persist across sessions"
+        return "Remember, forget or search facts and past conversation that persist across sessions"
 
     @property
     def parameters_schema(self) -> dict[str, Any]:
@@ -32,7 +32,7 @@ class Memory(Tool):
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["remember", "forget", "list"],
+                    "enum": ["remember", "forget", "list", "recall"],
                     "description": "What to do",
                 },
                 "key": {
@@ -43,6 +43,10 @@ class Memory(Tool):
                     "type": "string",
                     "description": "Fact value (for remember)",
                 },
+                "query": {
+                    "type": "string",
+                    "description": "Text to search for (for recall)",
+                },
             },
             "required": ["action"],
         }
@@ -52,25 +56,27 @@ class Memory(Tool):
         action: str,
         key: str = "",
         value: str = "",
+        query: str = "",
     ) -> ToolResult:
         handlers = {
             "remember": self._remember,
             "forget": self._forget,
             "list": self._list,
+            "recall": self._recall,
         }
 
         handler = handlers.get(action)
         if handler is None:
             return ToolResult.error(
-                f"Unknown action: {action}. Use remember, forget or list."
+                "Unknown action: use remember, forget, list or recall."
             )
 
         try:
-            return handler(key.strip(), value.strip())
+            return handler(key.strip(), value.strip(), query.strip())
         except Exception as e:
             return ToolResult.error(f"Memory operation failed: {e}")
 
-    def _remember(self, key: str, value: str) -> ToolResult:
+    def _remember(self, key: str, value: str, query: str = "") -> ToolResult:
         if not key:
             return ToolResult.error("A fact key is required")
         if not value:
@@ -79,7 +85,7 @@ class Memory(Tool):
         self.memory.learn_fact(key, value)
         return ToolResult.success(f"Remembered: {key} = {value}")
 
-    def _forget(self, key: str, value: str) -> ToolResult:
+    def _forget(self, key: str, value: str, query: str = "") -> ToolResult:
         if not key:
             return ToolResult.error("A fact key is required")
 
@@ -87,10 +93,32 @@ class Memory(Tool):
             return ToolResult.success(f"Forgot: {key}")
         return ToolResult.error(f"No fact stored as: {key}")
 
-    def _list(self, key: str, value: str) -> ToolResult:
+    def _list(self, key: str, value: str, query: str = "") -> ToolResult:
         facts = self.memory.facts()
         if not facts:
             return ToolResult.success("No facts stored yet.")
 
         lines = [f"{k} = {v}" for k, v in facts.items()]
+        return ToolResult.success("\n".join(lines))
+
+    def _recall(self, key: str, value: str, query: str = "") -> ToolResult:
+        if not query:
+            return ToolResult.error("A search query is required")
+
+        facts, messages = self.memory.recall(query, all_sessions=True)
+
+        if not facts and not messages:
+            return ToolResult.success(f"Nothing found for: {query}")
+
+        lines: list[str] = []
+        if facts:
+            lines.append("Facts:")
+            lines.extend(f"  {k} = {v}" for k, v in facts.items())
+
+        if messages:
+            if lines:
+                lines.append("")
+            lines.append("Messages:")
+            lines.extend(f"  [{m.role}] {m.content}" for m in messages)
+
         return ToolResult.success("\n".join(lines))

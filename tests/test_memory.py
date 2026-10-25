@@ -3,42 +3,11 @@ from unittest.mock import MagicMock, patch
 
 from liz.config.settings import Settings
 from liz.core.agent import Agent
-from liz.core.memory import ConversationMemory, MemoryStore
+from liz.core.memory import ConversationMemory
 from liz.core.models import AIResponse, Message, Role
 from liz.infrastructure.ai.base import AIProvider
 from liz.infrastructure.persistence.memory_store import SQLiteMemoryStore
-
-
-class InMemoryStore(MemoryStore):
-    def __init__(self) -> None:
-        self.messages: list[tuple[str, str, str]] = []
-        self.facts: dict[str, str] = {}
-        self.closed = False
-
-    def save_message(self, session_id, role, content):
-        self.messages.append((session_id, role, content))
-
-    def get_history(self, session_id, limit=50):
-        rows = [m for m in self.messages if m[0] == session_id][-limit:]
-        return [Message(role=Role(r), content=c) for _, r, c in rows]
-
-    def clear_session(self, session_id):
-        self.messages = [m for m in self.messages if m[0] != session_id]
-
-    def save_fact(self, key, value):
-        self.facts[key] = value
-
-    def get_facts(self):
-        return dict(self.facts)
-
-    def delete_fact(self, key):
-        if key in self.facts:
-            del self.facts[key]
-            return True
-        return False
-
-    def close(self):
-        self.closed = True
+from tests.memory_helpers import InMemoryStore
 
 
 class TestConversationMemory:

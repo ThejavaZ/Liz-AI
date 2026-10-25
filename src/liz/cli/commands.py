@@ -1,3 +1,4 @@
+import json
 import platform
 import sys
 from dataclasses import dataclass
@@ -53,6 +54,10 @@ class CommandHandler:
             "notes": self._notes,
             "remember": self._remember,
             "forget": self._forget,
+            "session": self._session,
+            "recall": self._recall,
+            "export": self._export,
+            "import": self._import,
             "config": self._config,
             "doctor": self._doctor,
             "clear": self._clear,
@@ -85,6 +90,10 @@ class CommandHandler:
   /memory   Show stored facts and session info
   /remember Store a fact: /remember editor = neovim
   /forget   Remove a fact: /forget editor
+  /session  List sessions, or /session <name> to switch
+  /recall   Search past messages and facts: /recall <texto>
+  /export   Save history to JSON: /export [archivo.json]
+  /import   Load history from JSON: /import <archivo.json>
   /notes    Manage notes: list | add <title> | del <id> | find <text>
   /config   Show effective configuration
   /doctor   Run health diagnostics
@@ -237,6 +246,128 @@ class CommandHandler:
 
     def _memory_or_none(self):
         return getattr(self.agent, "memory", None) if self.agent else None
+
+    def _session(self, args: str = "") -> CommandResult:
+        memory = self._memory_or_none()
+        if memory is None:
+            return CommandResult(output="Memory is not enabled.")
+
+        name = args.strip()
+        if not name:
+            sessions = memory.sessions()
+            lines = ["Sessions:"]
+            for session in sessions:
+                marker = " (current)" if session == memory.session_id else ""
+                lines.append(f"  {session}{marker}")
+            lines.append("\nUsage: /session <name> to switch or create")
+            return CommandResult(output="\n".join(lines))
+
+        if not self._valid_session_name(name):
+            return CommandResult(
+                output="Session names may only use letters, numbers, - and _"
+            )
+
+        self.agent.switch_session(name)
+        count = len(self.agent.context.get_messages()) - 1
+        return CommandResult(
+            output=f"Switched to session '{name}' ({count} messages in context)"
+        )
+
+    @staticmethod
+    def _valid_session_name(name: str) -> bool:
+        return len(name) <= 40 and all(
+            ch.isalnum() or ch in "-_" for ch in name
+        )
+
+    def _recall(self, args: str = "") -> CommandResult:
+        memory = self._memory_or_none()
+        if memory is None:
+            return CommandResult(output="Memory is not enabled.")
+
+        query = args.strip()
+        if not query:
+            return CommandResult(output="Usage: /recall <texto a buscar>")
+
+        facts, messages = memory.recall(query, all_sessions=True)
+
+        if not facts and not messages:
+            return CommandResult(output=f"Nada encontrado para: {query}")
+
+        lines: list[str] = []
+        if facts:
+            lines.append("Facts:")
+            for key, value in facts.items():
+                lines.append(f"  {key} = {value}")
+
+        if messages:
+            if lines:
+                lines.append("")
+            lines.append("Messages:")
+            for hit in messages:
+                lines.append(f"  [{hit.role} @{hit.session_id}] {hit.content}")
+
+        return CommandResult(output="\n".join(lines))
+
+    def _export(self, args: str = "") -> CommandResult:
+        memory = self._memory_or_none()
+        if memory is None:
+            return CommandResult(output="Memory is not enabled.")
+
+        raw = args.strip()
+        session = None
+        path = ""
+        if raw:
+            parts = raw.split(maxsplit=1)
+            if parts[0] == "session" and len(parts) > 1:
+                session = parts[1].strip()
+                path = ""
+            else:
+                path = raw
+
+        if not path:
+            target = session or memory.session_id
+            path = f"liz-{target}.json"
+
+        target = Path(path)
+        if target.parent and not target.parent.exists():
+            target.parent.mkdir(parents=True, exist_ok=True)
+
+        data = memory.export_session(session)
+        target.write_text(
+            json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        return CommandResult(
+            output=f"Exported {len(data['messages'])} messages "
+                   f"and {len(data['facts'])} facts to {target}"
+        )
+
+    def _import(self, args: str = "") -> CommandResult:
+        memory = self._memory_or_none()
+        if memory is None:
+            return CommandResult(output="Memory is not enabled.")
+
+        path = args.strip()
+        if not path:
+            return CommandResult(output="Usage: /import <archivo.json>")
+
+        target = Path(path)
+        if not target.exists():
+            return CommandResult(output=f"File not found: {path}")
+
+        try:
+            data = json.loads(target.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as error:
+            return CommandResult(output=f"Invalid JSON: {error}")
+
+        try:
+            count = memory.import_session(data)
+        except ValueError as error:
+            return CommandResult(output=str(error))
+
+        return CommandResult(
+            output=f"Imported {count} messages into session "
+                   f"'{memory.session_id}'"
+        )
 
     def _config(self, args: str = "") -> CommandResult:
         rows = [

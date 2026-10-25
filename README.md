@@ -19,10 +19,14 @@ Built with **modularity, security, and practical AI tooling** in mind.
 - Safe calculator (AST-based, never executes code)
 - Streaming responses (token by token, all providers)
 - Remember / forget facts (`/remember`, `/forget`, plus a `memory` tool Liz can use herself)
+- Multiple named sessions (`/session`) persisted across runs
+- Memory search over past messages and facts (`/recall`, also a `memory` tool action)
+- Export / import conversation history as JSON (`/export`, `/import`)
+- Context summarization when the conversation grows too long
 - Health diagnostics (`/doctor`) and config inspection (`/config`)
 - Internal CLI commands (`/help`, `/tools`, `/models`, `/memory`, `/notes`, `/config`, `/doctor`, `/clear`, `/status`)
 - Docker support
-- 362+ automated tests
+- 400+ automated tests
 
 ## Quick Start
 
@@ -81,6 +85,10 @@ Internal commands are available without calling the AI provider:
 | `/memory` | Show stored facts and session info           |
 | `/remember`| Store a fact: `/remember editor = neovim`    |
 | `/forget` | Remove a stored fact                         |
+| `/session`| List sessions, or `/session <name>` to switch|
+| `/recall` | Search past messages and facts               |
+| `/export` | Save history to JSON: `/export [file.json]`  |
+| `/import` | Load history from JSON: `/import <file.json>`|
 | `/notes`  | Manage notes: `list` / `add` / `del` / `find`|
 | `/config` | Show effective configuration (keys masked)   |
 | `/doctor` | Run health diagnostics                       |
@@ -142,7 +150,7 @@ Liz has access to the following tools:
 | `calculator`    | Evaluate math safely (AST-based, no `eval`)    |
 | `web_search`    | Search the web (DuckDuckGo, no API key)        |
 | `notes`         | Create, list, search and delete persistent notes|
-| `memory`        | Remember or forget facts across sessions      |
+| `memory`        | Remember, forget or search facts and past conversation |
 
 Tools are controlled by a permission layer (ALLOW/DENY/ASK).
 
@@ -214,13 +222,16 @@ python -m pytest tests/ -v
 
 ```
 tests/
+├── memory_helpers.py           # Shared in-memory MemoryStore double
 ├── test_context.py            # Context and conversation history
 ├── test_models.py             # Domain models
+├── test_agent.py              # Agent chat loop and tool rounds
 ├── test_factory.py            # Provider selection
 ├── test_providers.py          # Provider integrations
 ├── test_model_flexibility.py  # Model registry and fallback chain
 ├── test_memory.py             # Memory persistence
-├── test_memory_tool.py        # Memory tool (remember/forget)
+├── test_memory_tool.py        # Memory tool (remember/forget/list/recall)
+├── test_phase6.py             # Sessions, recall, export/import, summarizer
 ├── test_notes.py              # Notes persistence and tool
 ├── test_calculator.py         # Safe math evaluation
 ├── test_web.py                # Web search tool
@@ -282,14 +293,14 @@ tests/
 - [x] `/doctor` health diagnostics
 - [x] Model fallback chain and `/models`
 
-### Phase 6 — Conversation Quality
+### Phase 6 — Conversation Quality ✅
 
 - [x] Streaming responses (token by token)
-- [ ] Conversation summarization when context grows
-- [ ] Multiple named sessions
-- [ ] Memory search (retrieve relevant past facts)
+- [x] Conversation summarization when context grows
+- [x] Multiple named sessions (`/session`)
+- [x] Memory search (retrieve relevant past facts with `/recall`)
 - [x] `/remember` and `/forget` commands
-- [ ] Export / import conversation history
+- [x] Export / import conversation history (`/export`, `/import`)
 
 ### Phase 7 — Voice
 
