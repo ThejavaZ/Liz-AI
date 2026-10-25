@@ -8,6 +8,7 @@ the tool reports a clear message instead of crashing.
 import json
 import urllib.parse
 import urllib.request
+import warnings
 from typing import Any
 
 from liz.tools.base import Tool
@@ -21,42 +22,87 @@ TIMEOUT_SECONDS = 10
 MAX_RESULTS = 5
 
 
-def _search_with_library(query: str, max_results: int) -> list[dict[str, str]]:
-    from duckduckgo_search import DDGS
+def _load_ddgs():
+    """Import DDGS from either package name.
 
+    `duckduckgo_search` was renamed to `ddgs`; both spellings are
+    supported so whichever one is installed works.
+    """
+    try:
+        from ddgs import DDGS
+    except ImportError:
+        from duckduckgo_search import DDGS
+    return DDGS
+
+
+def _search_with_library(query: str, max_results: int) -> list[dict[str, str]]:
     results: list[dict[str, str]] = []
-    with DDGS() as ddgs:
-        for item in ddgs.text(query, max_results=max_results):
-            results.append(
-                {
-                    "title": item.get("title", ""),
-                    "url": item.get("href", ""),
-                    "snippet": item.get("body", ""),
-                }
-            )
+    original_warn = warnings.warn
+
+    def _quiet(message, *args, **kwargs):
+        # The legacy package forces its rename warning through with
+        # simplefilter("always"), which would bypass any filter and land
+        # in the middle of the streamed reply. Drop just that message.
+        if "renamed to `ddgs`" in str(message):
+            return None
+        return original_warn(message, *args, **kwargs)
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message=r".*renamed.*")
+        warnings.warn = _quiet
+        try:
+            ddgs_class = _load_ddgs()
+            with ddgs_class() as ddgs:
+                for item in ddgs.text(query, max_results=max_results):
+                    results.append(
+                        {
+                            "title": item.get("title", ""),
+                            "url": item.get("href", ""),
+                            "snippet": item.get("body", ""),
+                        }
+                    )
+        finally:
+            warnings.warn = original_warn
     return results
 
 
-def _search_fallback(query: str, max_results: int) -> list[dict[str, str]]:
-    """Minimal fallback using the DuckDuckGo lite HTML endpoint."""
-    url = "https://html.duckduckgo.com/html/" + urllib.parse.urlencode(
-        {"q": query}
-    )
-    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-
+def _fetch_html(url: str, data: bytes | None = None) -> str:
+    headers = {"User-Agent": USER_AGENT}
+    if data is not None:
+        headers["Content-Type"] = "application/x-www-form-urlencoded"
+    request = urllib.request.Request(url, data=data, headers=headers)
     with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:
-        html = response.read().decode("utf-8", errors="replace")
+        return response.read().decode("utf-8", errors="replace")
+
+
+def _search_fallback(query: str, max_results: int) -> list[dict[str, str]]:
+    """Minimal fallback using the DuckDuckGo HTML endpoint.
+
+    The endpoint expects the query as a POST body; sending it as a GET
+    returns the landing page and zero results.
+    """
+    url = "https://html.duckduckgo.com/html/"
+    body = urllib.parse.urlencode({"q": query}).encode()
+    try:
+        html = _fetch_html(url, data=body)
+    except Exception:
+        # some deployments still answer plain GET
+        html = _fetch_html(url + "?" + urllib.parse.urlencode({"q": query}))
 
     results: list[dict[str, str]] = []
-    for chunk in html.split('class="result__a"')[1: max_results + 1]:
-        title = _extract_between(chunk, ">", "</a>")
+    for chunk in html.split('class="result__a"')[1:]:
+        if len(results) >= max_results:
+            break
         href = _extract_attr(chunk, "href")
-        snippet = _extract_between(chunk, 'class="result__snippet"', "</a>")
+        if "duckduckgo.com/y.js" in href:
+            continue  # sponsored result
         results.append(
             {
-                "title": _clean(title),
+                "title": _clean(_extract_between(chunk, ">", "</a>")),
                 "url": _clean_url(href),
-                "snippet": _clean(snippet),
+                "snippet": _clean(
+                    _extract_between(chunk, 'class="result__snippet"', "</a>")
+                ),
             }
         )
     return results
@@ -101,13 +147,23 @@ def _clean_url(url: str) -> str:
 
 
 def search_web(query: str, max_results: int = MAX_RESULTS) -> list[dict[str, str]]:
-    """Search the web, preferring the library and falling back to HTML."""
+    """Search the web without an API key.
+
+    The HTML endpoint is the reliable path, so it goes first; the legacy
+    library (when installed) is kept as a backup because it answers 0
+    results or homepage junk for some queries.
+    """
+    try:
+        results = _search_fallback(query, max_results)
+    except Exception:
+        results = []
+    if results:
+        return results
+
     try:
         return _search_with_library(query, max_results)
-    except ImportError:
-        return _search_fallback(query, max_results)
     except Exception:
-        return _search_fallback(query, max_results)
+        return []
 
 
 class WebSearch(Tool):

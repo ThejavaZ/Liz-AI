@@ -1,9 +1,51 @@
-from unittest.mock import patch
+import sys
+import types
+import warnings
+from unittest.mock import MagicMock, patch
+from urllib.error import URLError
 
 import pytest
 
 from liz.tools.models import ToolStatus
-from liz.tools.web import WebSearch, _clean, _clean_url
+from liz.tools.web import (
+    WebSearch,
+    _clean,
+    _clean_url,
+    _load_ddgs,
+    _search_fallback,
+    _search_with_library,
+    search_web,
+)
+
+
+def _fake_module(name: str, ddgs_cls) -> types.ModuleType:
+    module = types.ModuleType(name)
+    module.DDGS = ddgs_cls
+    return module
+
+
+class _FakeDDGS:
+    """Stands in for the real client and warns like the legacy package."""
+
+    def __init__(self) -> None:
+        # the real package does exactly this before warning, which
+        # would bypass any filter set by the caller
+        warnings.simplefilter("always")
+        warnings.warn(
+            "This package (`duckduckgo_search`) has been renamed to `ddgs`!",
+            RuntimeWarning,
+        )
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def text(self, query, max_results=5):
+        return [
+            {"title": "T", "href": "https://x.test", "body": "B"}
+        ][:max_results]
 
 
 class TestHelpers:
@@ -93,3 +135,150 @@ class TestWebSearchTool:
         mock_search.return_value = []
         WebSearch().execute(query="x")
         assert mock_search.call_args[0][1] == 5
+
+
+class TestDDGSLibrary:
+    """`duckduckgo_search` was renamed to `ddgs`; both must work quietly."""
+
+    def test_prefers_ddgs_package(self, monkeypatch) -> None:
+        monkeypatch.setitem(
+            sys.modules, "ddgs", _fake_module("ddgs", _FakeDDGS)
+        )
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            results = _search_with_library("python", 3)
+
+        assert results[0]["url"] == "https://x.test"
+        assert caught == []
+
+    def test_falls_back_to_legacy_package(self, monkeypatch) -> None:
+        monkeypatch.setitem(sys.modules, "ddgs", None)
+        monkeypatch.setitem(
+            sys.modules,
+            "duckduckgo_search",
+            _fake_module("duckduckgo_search", _FakeDDGS),
+        )
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            results = _search_with_library("python", 3)
+
+        assert results[0]["title"] == "T"
+        assert caught == []
+
+    def test_rename_warning_is_suppressed(self, monkeypatch) -> None:
+        monkeypatch.setitem(
+            sys.modules, "ddgs", _fake_module("ddgs", _FakeDDGS)
+        )
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            _search_with_library("x", 1)
+
+        assert not [
+            w for w in caught if "renamed" in str(w.message)
+        ]
+
+    def test_missing_both_packages_raises(self, monkeypatch) -> None:
+        monkeypatch.setitem(sys.modules, "ddgs", None)
+        monkeypatch.setitem(sys.modules, "duckduckgo_search", None)
+
+        with pytest.raises(ImportError):
+            _load_ddgs()
+
+
+class TestSearchSelection:
+    @patch("liz.tools.web._search_with_library")
+    @patch("liz.tools.web._search_fallback")
+    def test_html_result_wins(self, mock_html, mock_lib) -> None:
+        hits = [{"title": "T", "url": "u", "snippet": "s"}]
+        mock_html.return_value = hits
+
+        assert search_web("q") == hits
+        mock_lib.assert_not_called()
+
+    @patch("liz.tools.web._search_with_library")
+    @patch("liz.tools.web._search_fallback")
+    def test_empty_html_uses_library(self, mock_html, mock_lib) -> None:
+        hits = [{"title": "T", "url": "u", "snippet": "s"}]
+        mock_html.return_value = []
+        mock_lib.return_value = hits
+
+        assert search_web("q") == hits
+        mock_lib.assert_called_once()
+
+    @patch("liz.tools.web._search_with_library")
+    @patch("liz.tools.web._search_fallback")
+    def test_html_error_uses_library(self, mock_html, mock_lib) -> None:
+        mock_html.side_effect = URLError("down")
+        mock_lib.return_value = []
+
+        assert search_web("q") == []
+
+    @patch("liz.tools.web._search_with_library")
+    @patch("liz.tools.web._search_fallback")
+    def test_both_paths_failing_returns_empty(
+        self, mock_html, mock_lib
+    ) -> None:
+        mock_html.side_effect = URLError("down")
+        mock_lib.side_effect = ImportError("no package")
+
+        assert search_web("q") == []
+
+
+class TestHtmlFallback:
+    @patch("liz.tools.web.urllib.request.urlopen")
+    def test_posts_the_query(self, mock_urlopen) -> None:
+        html = b'<a class="result__a" href="https://x.test">Title</a>'
+        response = MagicMock()
+        response.__enter__.return_value.read.return_value = html
+        mock_urlopen.return_value = response
+
+        results = _search_fallback("python rocks", 5)
+
+        request = mock_urlopen.call_args[0][0]
+        assert request.data == b"q=python+rocks"
+        assert request.get_header("Content-type") == (
+            "application/x-www-form-urlencoded"
+        )
+        assert results[0]["url"] == "https://x.test"
+        assert results[0]["title"] == "Title"
+
+    @patch("liz.tools.web.urllib.request.urlopen")
+    def test_post_failure_retries_with_get(self, mock_urlopen) -> None:
+        html = b'<a class="result__a" href="https://y.test">Other</a>'
+        response = MagicMock()
+        response.__enter__.return_value.read.return_value = html
+        mock_urlopen.side_effect = [URLError("down"), response]
+
+        results = _search_fallback("q", 5)
+
+        assert results[0]["url"] == "https://y.test"
+        assert mock_urlopen.call_args_list[1][0][0].data is None
+
+    @patch("liz.tools.web.urllib.request.urlopen")
+    def test_skips_sponsored_results(self, mock_urlopen) -> None:
+        html = (
+            b'<a class="result__a" href="https://duckduckgo.com/y.js?ad=x">Ad</a>'
+            b'<a class="result__a" href="https://real.test/">Organic</a>'
+        )
+        response = MagicMock()
+        response.__enter__.return_value.read.return_value = html
+        mock_urlopen.return_value = response
+
+        results = _search_fallback("q", 5)
+
+        assert [item["url"] for item in results] == ["https://real.test/"]
+
+    @patch("liz.tools.web.urllib.request.urlopen")
+    def test_max_results_respected(self, mock_urlopen) -> None:
+        html = "".join(
+            f'<a class="result__a" href="https://r{i}.test/">T{i}</a>'
+            for i in range(10)
+        ).encode()
+        response = MagicMock()
+        response.__enter__.return_value.read.return_value = html
+        mock_urlopen.return_value = response
+
+        assert len(_search_fallback("q", 3)) == 3
