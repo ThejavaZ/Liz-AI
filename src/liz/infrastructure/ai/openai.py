@@ -1,3 +1,4 @@
+import json
 from typing import Any, Iterator
 
 from openai import OpenAI
@@ -36,13 +37,58 @@ class OpenAIProvider(AIProvider):
         for msg in messages:
             if msg.role == Role.SYSTEM:
                 oai_messages.append({"role": "system", "content": msg.content})
+
             elif msg.role == Role.USER:
                 oai_messages.append({"role": "user", "content": msg.content})
+
             elif msg.role == Role.ASSISTANT:
-                oai_messages.append(
-                    {"role": "assistant", "content": msg.content}
-                )
+                entry: dict[str, Any] = {
+                    "role": "assistant",
+                    "content": msg.content or None,
+                }
+                if msg.tool_calls:
+                    entry["tool_calls"] = [
+                        {
+                            "id": call.id,
+                            "type": "function",
+                            "function": {
+                                "name": call.name,
+                                "arguments": json.dumps(call.arguments),
+                            },
+                        }
+                        for call in msg.tool_calls
+                    ]
+                oai_messages.append(entry)
+
+            elif msg.role == Role.TOOL:
+                oai_messages.append({
+                    "role": "tool",
+                    "tool_call_id": msg.tool_call_id or "",
+                    "content": msg.content,
+                })
         return oai_messages
+
+    @staticmethod
+    def _parse_tool_calls(message: Any) -> list[ToolCall]:
+        raw = getattr(message, "tool_calls", None) or []
+        tool_calls: list[ToolCall] = []
+
+        for call in raw:
+            function = getattr(call, "function", None)
+            arguments: dict[str, Any] = {}
+            raw_args = getattr(function, "arguments", None) if function else None
+            if raw_args:
+                try:
+                    arguments = json.loads(raw_args)
+                except json.JSONDecodeError:
+                    arguments = {}
+
+            tool_calls.append(ToolCall(
+                id=getattr(call, "id", "") or f"call_{len(tool_calls)}",
+                name=getattr(function, "name", "") if function else "",
+                arguments=arguments,
+            ))
+        return tool_calls
 
     def _merge_tool_call(
         self, accumulated: dict[int, dict[str, Any]], parts: Any
@@ -63,8 +109,6 @@ class OpenAIProvider(AIProvider):
     def _finalize_tool_calls(
         accumulated: dict[int, dict[str, Any]],
     ) -> list[ToolCall]:
-        import json
-
         tool_calls: list[ToolCall] = []
         for index in sorted(accumulated):
             entry = accumulated[index]
@@ -86,33 +130,58 @@ class OpenAIProvider(AIProvider):
         messages: list[Message],
         tools: list[dict[str, Any]] | None = None,
     ) -> AIResponse:
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=self._convert_messages(messages),
-        )
+        kwargs: dict[str, Any] = {
+            "model": self.model,
+            "messages": self._convert_messages(messages),
+        }
+        if tools:
+            kwargs["tools"] = self._convert_tools(tools)
+
+        response = self.client.chat.completions.create(**kwargs)
 
         choice = response.choices[0]
 
         return AIResponse(
             content=choice.message.content or "",
             model=response.model,
+            tool_calls=self._parse_tool_calls(choice.message),
             usage={
                 "input_tokens": response.usage.prompt_token_count,
                 "output_tokens": response.usage.completion_token_count,
             } if response.usage else {},
         )
 
+    @staticmethod
+    def _convert_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return [
+            {
+                "type": "function",
+                "function": {
+                    "name": tool["name"],
+                    "description": tool.get("description", ""),
+                    "parameters": tool.get(
+                        "parameters", {"type": "object", "properties": {}}
+                    ),
+                },
+            }
+            for tool in tools
+        ]
+
     def stream_chat(
         self,
         messages: list[Message],
         tools: list[dict[str, Any]] | None = None,
     ) -> Iterator[StreamChunk]:
-        stream = self.client.chat.completions.create(
-            model=self.model,
-            messages=self._convert_messages(messages),
-            stream=True,
-            stream_options={"include_usage": True},
-        )
+        kwargs: dict[str, Any] = {
+            "model": self.model,
+            "messages": self._convert_messages(messages),
+            "stream": True,
+            "stream_options": {"include_usage": True},
+        }
+        if tools:
+            kwargs["tools"] = self._convert_tools(tools)
+
+        stream = self.client.chat.completions.create(**kwargs)
 
         text_parts: list[str] = []
         accumulated: dict[int, dict[str, Any]] = {}

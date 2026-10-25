@@ -11,16 +11,25 @@ class Role(Enum):
 
 
 @dataclass
-class Message:
-    role: Role
-    content: str
-
-
-@dataclass
 class ToolCall:
     id: str
     name: str
     arguments: dict[str, Any]
+
+
+@dataclass
+class Message:
+    """A single conversation turn.
+
+    Providers that support tool calling need the assistant's requested
+    calls and the matching tool response id, so both are carried on the
+    message itself.
+    """
+
+    role: Role
+    content: str
+    tool_calls: list[ToolCall] = field(default_factory=list)
+    tool_call_id: str | None = None
 
 
 @dataclass

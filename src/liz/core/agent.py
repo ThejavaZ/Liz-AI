@@ -59,7 +59,9 @@ class Agent:
                     )
                 return response.content
 
-            self.context.add_assistant_message(response.content or "")
+            self.context.add_assistant_message(
+                response.content or "", tool_calls=response.tool_calls
+            )
 
             for tool_call in response.tool_calls:
                 result = self._execute_tool(tool_call)
@@ -124,7 +126,9 @@ class Agent:
                     )
                 return
 
-            self.context.add_assistant_message(final.content or "")
+            self.context.add_assistant_message(
+                final.content or "", tool_calls=final.tool_calls
+            )
 
             events: list[str] = []
             for tool_call in final.tool_calls:
@@ -165,6 +169,4 @@ class Agent:
             return f"Error: {result.error}"
 
     def _add_tool_result(self, tool_call: ToolCall, result: str) -> None:
-        self.context.messages.append(
-            Message(role=Role.TOOL, content=result)
-        )
+        self.context.add_tool_result(tool_call.id, result)

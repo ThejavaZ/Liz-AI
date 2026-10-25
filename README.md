@@ -22,7 +22,7 @@ Built with **modularity, security, and practical AI tooling** in mind.
 - Health diagnostics (`/doctor`) and config inspection (`/config`)
 - Internal CLI commands (`/help`, `/tools`, `/models`, `/memory`, `/notes`, `/config`, `/doctor`, `/clear`, `/status`)
 - Docker support
-- 342+ automated tests
+- 362+ automated tests
 
 ## Quick Start
 
@@ -225,6 +225,7 @@ tests/
 ├── test_calculator.py         # Safe math evaluation
 ├── test_web.py                # Web search tool
 ├── test_streaming.py          # Streaming responses and fallback
+├── test_openai_tools.py       # Tool calling for OpenAI-compatible providers
 ├── test_filesystem.py         # File operations
 ├── test_git.py                # Git operations
 ├── test_terminal.py           # Terminal commands
