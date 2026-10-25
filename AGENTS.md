@@ -15,7 +15,7 @@ Ollama models).
 ```bash
 source .venv/bin/activate
 python main.py                     # run the CLI
-python -m pytest tests/ -q         # run the test suite (456 tests, must all pass)
+python -m pytest tests/ -q         # run the test suite (460 tests, must all pass)
 python -m pytest tests/ -v -k name # run one test file or case
 ```
 
@@ -122,10 +122,14 @@ tests/                     # pytest suite
   `models_registry.list_models()` because every call pays a failed request.
 - **Empty stubs:** `src/liz/infrastructure/voice/*.py` are placeholders for
   Phase 7; do not delete them.
+- **Web search backends:** the `[web]` extra installs `ddgs` (formerly
+  `duckduckgo_search`). `_load_ddgs()` in `tools/web.py` accepts both
+  names, and DuckDuckGo's HTML endpoint (POST) is tried first because the
+  library returns empty or junk for some queries.
 
 ## Testing
 
-- Every change: `python -m pytest tests/ -q` must end in **456 passed**.
+- Every change: `python -m pytest tests/ -q` must end in **460 passed**.
 - Put new tests in a descriptive `tests/test_<topic>.py`.
 - Reuse `tests/memory_helpers.py::InMemoryStore` for store doubles; do not
   write a fourth copy of an in-memory store.

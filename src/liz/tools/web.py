@@ -9,6 +9,7 @@ import json
 import urllib.parse
 import urllib.request
 import warnings
+from contextlib import nullcontext
 from typing import Any
 
 from liz.tools.base import Tool
@@ -52,7 +53,12 @@ def _search_with_library(query: str, max_results: int) -> list[dict[str, str]]:
         warnings.warn = _quiet
         try:
             ddgs_class = _load_ddgs()
-            with ddgs_class() as ddgs:
+            client = ddgs_class()
+            # older clients were context managers, newer ones are not
+            scope = (
+                client if hasattr(client, "__enter__") else nullcontext(client)
+            )
+            with scope as ddgs:
                 for item in ddgs.text(query, max_results=max_results):
                     results.append(
                         {

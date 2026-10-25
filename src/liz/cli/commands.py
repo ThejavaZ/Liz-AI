@@ -476,12 +476,15 @@ class CommandHandler:
 
     @staticmethod
     def _check_web_search() -> tuple[str, str, str]:
-        try:
-            import duckduckgo_search  # noqa: F401
+        import importlib
 
-            return ("WebSearch", "ok", "duckduckgo_search installed")
-        except ImportError:
-            return ("WebSearch", "warn", "using HTML fallback")
+        for module in ("ddgs", "duckduckgo_search"):
+            try:
+                importlib.import_module(module)
+            except ImportError:
+                continue
+            return ("WebSearch", "ok", f"{module} installed")
+        return ("WebSearch", "warn", "using HTML fallback")
 
     def _active_model(self) -> str:
         provider = self.provider

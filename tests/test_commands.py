@@ -1,3 +1,5 @@
+import sys
+
 import pytest
 from unittest.mock import MagicMock
 
@@ -486,3 +488,35 @@ class TestSystemPrompt:
         prompt = load_system_prompt().lower()
         assert "language" in prompt
         assert "spanish" in prompt
+
+
+class TestDoctorWebSearch:
+    def test_reports_ddgs(self, monkeypatch) -> None:
+        import types
+
+        monkeypatch.setitem(sys.modules, "ddgs", types.ModuleType("ddgs"))
+
+        name, status, detail = CommandHandler._check_web_search()
+        assert (name, status) == ("WebSearch", "ok")
+        assert "ddgs" in detail
+
+    def test_reports_legacy_package(self, monkeypatch) -> None:
+        import types
+
+        monkeypatch.setitem(sys.modules, "ddgs", None)
+        monkeypatch.setitem(
+            sys.modules, "duckduckgo_search",
+            types.ModuleType("duckduckgo_search"),
+        )
+
+        _, status, detail = CommandHandler._check_web_search()
+        assert status == "ok"
+        assert "duckduckgo_search" in detail
+
+    def test_warns_when_nothing_installed(self, monkeypatch) -> None:
+        monkeypatch.setitem(sys.modules, "ddgs", None)
+        monkeypatch.setitem(sys.modules, "duckduckgo_search", None)
+
+        _, status, detail = CommandHandler._check_web_search()
+        assert status == "warn"
+        assert "HTML fallback" in detail

@@ -27,7 +27,7 @@ Built with **modularity, security, and practical AI tooling** in mind.
 - Health diagnostics (`/doctor`) and config inspection (`/config`)
 - Internal CLI commands (`/help`, `/tools`, `/models`, `/memory`, `/notes`, `/config`, `/doctor`, `/clear`, `/status`)
 - Docker support
-- 456+ automated tests
+- 460+ automated tests
 
 ## Quick Start
 
@@ -155,9 +155,9 @@ Liz has access to the following tools:
 
 Tools are controlled by a permission layer (ALLOW/DENY/ASK).
 
-`web_search` uses the `duckduckgo-search` package when installed and
-falls back to DuckDuckGo's HTML endpoint otherwise, so it works either
-way.
+`web_search` queries DuckDuckGo's HTML endpoint directly and uses the
+optional `ddgs` package when installed (formerly `duckduckgo-search`) as
+a backup, so it works either way.
 
 ## Architecture
 

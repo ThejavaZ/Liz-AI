@@ -187,6 +187,21 @@ class TestDDGSLibrary:
         with pytest.raises(ImportError):
             _load_ddgs()
 
+    def test_client_without_context_manager(self, monkeypatch) -> None:
+        class PlainDDGS:
+            def text(self, query, max_results=5):
+                return [
+                    {"title": "N", "href": "https://n.test", "body": "B"}
+                ][:max_results]
+
+        monkeypatch.setitem(
+            sys.modules, "ddgs", _fake_module("ddgs", PlainDDGS)
+        )
+
+        results = _search_with_library("q", 2)
+
+        assert results[0]["url"] == "https://n.test"
+
 
 class TestSearchSelection:
     @patch("liz.tools.web._search_with_library")
