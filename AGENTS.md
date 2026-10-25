@@ -15,12 +15,12 @@ Ollama models).
 ```bash
 source .venv/bin/activate
 python main.py                     # run the CLI
-python -m pytest tests/ -q         # run the test suite (436 tests, must all pass)
+python -m pytest tests/ -q         # run the test suite (456 tests, must all pass)
 python -m pytest tests/ -v -k name # run one test file or case
 ```
 
 - Python `>=3.11`, installed deps in `pyproject.toml`.
-- Optional extras: `pip install -e ".[web]"` (better web search),
+- Optional extras: `pip install -e ".[web]"` (second search backend),
   `pip install -e ".[dev]"` (pytest).
 - Configuration comes from `.env` / environment (`src/liz/config/settings.py`).
   **Never commit or edit the user's `.env`** unless explicitly asked.
@@ -125,7 +125,7 @@ tests/                     # pytest suite
 
 ## Testing
 
-- Every change: `python -m pytest tests/ -q` must end in **436 passed**.
+- Every change: `python -m pytest tests/ -q` must end in **456 passed**.
 - Put new tests in a descriptive `tests/test_<topic>.py`.
 - Reuse `tests/memory_helpers.py::InMemoryStore` for store doubles; do not
   write a fourth copy of an in-memory store.

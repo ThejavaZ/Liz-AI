@@ -27,7 +27,7 @@ Built with **modularity, security, and practical AI tooling** in mind.
 - Health diagnostics (`/doctor`) and config inspection (`/config`)
 - Internal CLI commands (`/help`, `/tools`, `/models`, `/memory`, `/notes`, `/config`, `/doctor`, `/clear`, `/status`)
 - Docker support
-- 436+ automated tests
+- 456+ automated tests
 
 ## Quick Start
 
@@ -44,7 +44,7 @@ pip install -e .
 Optional extras:
 
 ```bash
-pip install -e ".[web]"   # faster, more reliable web search
+pip install -e ".[web]"   # optional second web-search backend
 pip install -e ".[dev]"   # test tooling
 ```
 
