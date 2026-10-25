@@ -18,6 +18,7 @@ Built with **modularity, security, and practical AI tooling** in mind.
 - Web search without an API key
 - Safe calculator (AST-based, never executes code)
 - Streaming responses (token by token, all providers)
+- Markdown rendering in the terminal (headings, bold, lists, quotes, links, aligned tables, code fences) with ANSI and zero dependencies
 - Remember / forget facts (`/remember`, `/forget`, plus a `memory` tool Liz can use herself)
 - Multiple named sessions (`/session`) persisted across runs
 - Memory search over past messages and facts (`/recall`, also a `memory` tool action)
@@ -26,7 +27,7 @@ Built with **modularity, security, and practical AI tooling** in mind.
 - Health diagnostics (`/doctor`) and config inspection (`/config`)
 - Internal CLI commands (`/help`, `/tools`, `/models`, `/memory`, `/notes`, `/config`, `/doctor`, `/clear`, `/status`)
 - Docker support
-- 400+ automated tests
+- 436+ automated tests
 
 ## Quick Start
 
@@ -232,6 +233,7 @@ tests/
 ├── test_memory.py             # Memory persistence
 ├── test_memory_tool.py        # Memory tool (remember/forget/list/recall)
 ├── test_phase6.py             # Sessions, recall, export/import, summarizer
+├── test_markdown.py           # Terminal Markdown renderer
 ├── test_notes.py              # Notes persistence and tool
 ├── test_calculator.py         # Safe math evaluation
 ├── test_web.py                # Web search tool
@@ -301,6 +303,7 @@ tests/
 - [x] Memory search (retrieve relevant past facts with `/recall`)
 - [x] `/remember` and `/forget` commands
 - [x] Export / import conversation history (`/export`, `/import`)
+- [x] Markdown rendering in terminal output (`cli/markdown.py`, stdlib ANSI)
 
 ### Phase 7 — Voice
 
