@@ -251,6 +251,7 @@ class TestAudioCapture:
     def test_record_builds_expected_command(
         self, monkeypatch, tmp_path
     ) -> None:
+        monkeypatch.setattr(audio_capture, "recorder_available", lambda: True)
         captured = {}
 
         def fake_run(command, **kwargs):
@@ -268,6 +269,7 @@ class TestAudioCapture:
         assert "-r" in command and command[command.index("-r") + 1] == str(RATE)
 
     def test_record_reports_stderr(self, monkeypatch, tmp_path) -> None:
+        monkeypatch.setattr(audio_capture, "recorder_available", lambda: True)
         monkeypatch.setattr(
             audio_capture.subprocess,
             "run",
@@ -280,6 +282,8 @@ class TestAudioCapture:
         assert not (tmp_path / "x.wav").exists()
 
     def test_record_timeout(self, monkeypatch, tmp_path) -> None:
+        monkeypatch.setattr(audio_capture, "recorder_available", lambda: True)
+
         def expired(command, **kwargs):
             raise subprocess.TimeoutExpired(command, 5)
 

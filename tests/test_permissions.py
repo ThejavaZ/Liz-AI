@@ -17,7 +17,22 @@ class TestPermissionLayer:
         pl.set_rule("tool_b", Permission.DENY)
         assert pl.check("tool_b") == Permission.DENY
         assert not pl.is_allowed("tool_b")
+        assert pl.is_denied("tool_b")
         assert not pl.requires_ask("tool_b")
+
+    def test_is_denied_false_for_other_permissions(self) -> None:
+        pl = PermissionLayer()
+        pl.set_rule("allowed", Permission.ALLOW)
+        pl.set_rule("asked", Permission.ASK)
+        assert not pl.is_denied("allowed")
+        assert not pl.is_denied("asked")
+
+    def test_is_denied_follows_default(self) -> None:
+        pl = PermissionLayer()
+        pl.set_default(Permission.DENY)
+        assert pl.is_denied("unknown_tool")
+        pl.set_default(Permission.ALLOW)
+        assert not pl.is_denied("unknown_tool")
 
     def test_set_rule_ask(self) -> None:
         pl = PermissionLayer()

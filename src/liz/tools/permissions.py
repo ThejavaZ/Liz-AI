@@ -25,7 +25,7 @@ class PermissionLayer:
         return self.check(tool_name) == Permission.ALLOW
 
     def is_denied(self, tool_name: str) -> bool:
-        return self.check(tool_name) == Permission.DENIED
+        return self.check(tool_name) == Permission.DENY
 
     def requires_ask(self, tool_name: str) -> bool:
         return self.check(tool_name) == Permission.ASK
