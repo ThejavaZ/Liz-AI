@@ -59,7 +59,13 @@ class ToolRegistry:
                     f"Permission denied for tool: {tool_name}"
                 )
 
-        return tool.execute(**kwargs)
+        try:
+            return tool.execute(**kwargs)
+        except Exception as exc:
+            # A crashing tool is an error result, never an exception
+            # through the agent loop: an unhandled raise would abort the
+            # round halfway and orphan the remaining tool_calls.
+            return ToolResult.error(f"{tool_name} failed: {exc!r}")
 
     def _request_confirmation(
         self, tool_name: str, kwargs: dict[str, Any]

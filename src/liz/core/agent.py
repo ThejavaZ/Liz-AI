@@ -14,7 +14,13 @@ MAX_TOOL_ROUNDS = 5
 
 
 def _short_args(tool_call: ToolCall, limit: int = 40) -> str:
-    text = ", ".join(f"{k}={v!r}" for k, v in tool_call.arguments.items())
+    arguments = tool_call.arguments
+    if isinstance(arguments, dict):
+        text = ", ".join(f"{k}={v!r}" for k, v in arguments.items())
+    else:
+        # Providers occasionally parse arguments into a non-object
+        # (e.g. a JSON array); still describe them for tool events.
+        text = repr(arguments)
     return text if len(text) <= limit else text[: limit - 3] + "..."
 
 
@@ -200,9 +206,23 @@ class Agent:
         if self.tool_registry is None:
             return "Error: No tool registry configured"
 
-        result = self.tool_registry.execute(
-            tool_call.name, **tool_call.arguments
-        )
+        # Providers occasionally emit arguments that are not an object
+        # (e.g. a bare JSON array). The tool must still get an answer,
+        # otherwise its tool_call would dangle with no tool result and
+        # the next provider request would fail with a 400.
+        if not isinstance(tool_call.arguments, dict):
+            return (
+                "Error: arguments for "
+                f"{tool_call.name!r} must be a JSON object, got "
+                f"{type(tool_call.arguments).__name__}"
+            )
+
+        try:
+            result = self.tool_registry.execute(
+                tool_call.name, **tool_call.arguments
+            )
+        except Exception as exc:  # noqa: BLE001 - backstop, must not raise
+            return f"Error: tool {tool_call.name!r} crashed: {exc!r}"
 
         if result.status == ToolStatus.SUCCESS:
             return result.data
