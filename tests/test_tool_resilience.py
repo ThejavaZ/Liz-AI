@@ -390,3 +390,173 @@ class TestStreamingSurvivesCrash:
         results = _tool_results_after(agent.context.get_messages())
         assert [m.tool_call_id for m in results] == ["c1", "c2"]
         assert "boom" in results[0].content
+
+
+class TestProviderSideToolCallError:
+    """A ToolCall carrying `error` (e.g. arguments were not valid JSON)
+    must reach the model as an error, never run the tool."""
+
+    def test_error_field_becomes_result_without_executing(self) -> None:
+        bad_call = ToolCall(
+            id="c1",
+            name="echo_tool",
+            arguments={},
+            error="arguments were not valid JSON: {broken",
+        )
+        responses = [
+            AIResponse(content="", model="test", tool_calls=[bad_call]),
+            AIResponse(content="Let me retry.", model="test"),
+        ]
+        provider = MockToolProvider(responses)
+
+        with patch("liz.core.agent.create_provider", return_value=provider):
+            agent = Agent(
+                _make_settings(),
+                "sys",
+                tool_registry=_make_registry(EchoTool()),
+            )
+            result = agent.chat("bad args")
+
+        assert result == "Let me retry."
+        second_call = provider.seen_messages[1]
+        results = _tool_results_after(second_call)
+        assert len(results) == 1
+        assert "not valid JSON" in results[0].content
+        assert results[0].tool_call_id == "c1"
+
+    def test_error_field_precedes_registry_check(self) -> None:
+        agent = Agent.__new__(Agent)
+        agent.tool_registry = _make_registry(EchoTool())
+        call = ToolCall(
+            id="c1",
+            name="echo_tool",
+            arguments={"value": "x"},
+            error="arguments were not valid JSON",
+        )
+
+        message = agent._execute_tool(call)
+
+        assert message.startswith("Error:")
+        assert "not valid JSON" in message
+
+
+class AlwaysToolProvider:
+    """Every call requests the same tool, exhausting the round budget."""
+
+    def __init__(self, tool_call: ToolCall) -> None:
+        self.tool_call = tool_call
+        self.seen_messages: list[list[Message]] = []
+        self.seen_tools: list[Any] = []
+        self.call_count = 0
+
+    def chat(self, messages, tools=None):
+        self.seen_messages.append(list(messages))
+        self.seen_tools.append(tools)
+        self.call_count += 1
+        return AIResponse(
+            content="", model="test", tool_calls=[self.tool_call]
+        )
+
+
+class TestToolRoundBudget:
+    def test_budget_exhaustion_yields_final_answer(self) -> None:
+        from liz.core.agent import MAX_TOOL_ROUNDS
+
+        call = ToolCall(id="c1", name="echo_tool", arguments={"value": "x"})
+        provider = AlwaysToolProvider(call)
+
+        with patch("liz.core.agent.create_provider", return_value=provider):
+            agent = Agent(
+                _make_settings(),
+                "sys",
+                tool_registry=_make_registry(EchoTool()),
+            )
+            agent.chat("loop forever")
+
+        # MAX_TOOL_ROUNDS loop calls + final call + one bounded retry
+        assert provider.call_count == MAX_TOOL_ROUNDS + 2
+
+    def test_final_call_drops_tool_schemas(self) -> None:
+        call = ToolCall(id="c1", name="echo_tool", arguments={"value": "x"})
+        provider = AlwaysToolProvider(call)
+
+        with patch("liz.core.agent.create_provider", return_value=provider):
+            agent = Agent(
+                _make_settings(),
+                "sys",
+                tool_registry=_make_registry(EchoTool()),
+            )
+            agent.chat("loop forever")
+
+        # the last request must not offer tools, so the model answers
+        assert provider.seen_tools[-1] is None
+
+    def test_no_orphan_tool_calls_after_budget(self) -> None:
+        call = ToolCall(id="c1", name="echo_tool", arguments={"value": "x"})
+        provider = AlwaysToolProvider(call)
+
+        with patch("liz.core.agent.create_provider", return_value=provider):
+            agent = Agent(
+                _make_settings(),
+                "sys",
+                tool_registry=_make_registry(EchoTool()),
+            )
+            agent.chat("loop forever")
+
+        pending: set[str] = set()
+        for message in agent.context.get_messages():
+            if message.role is Role.ASSISTANT and message.tool_calls:
+                pending.update(tc.id for tc in message.tool_calls)
+            elif message.role is Role.TOOL:
+                pending.discard(message.tool_call_id)
+        assert not pending, f"orphaned tool calls: {pending}"
+
+
+class InsistentToolProvider:
+    """Ignores tools=None and keeps requesting tools even on the final
+    round — the agent must answer with an error, not crash."""
+
+    def __init__(self, tool_call: ToolCall) -> None:
+        self.tool_call = tool_call
+        self.call_count = 0
+
+    def chat(self, messages, tools=None):
+        self.call_count += 1
+        return AIResponse(
+            content="", model="test", tool_calls=[self.tool_call]
+        )
+
+
+class TestInsistentProvider:
+    def test_residual_tool_calls_get_error_results(self) -> None:
+        call = ToolCall(id="c1", name="echo_tool", arguments={"value": "x"})
+        provider = InsistentToolProvider(call)
+
+        with patch("liz.core.agent.create_provider", return_value=provider):
+            agent = Agent(
+                _make_settings(),
+                "sys",
+                tool_registry=_make_registry(EchoTool()),
+            )
+            agent.chat("keep asking")
+
+        results = _tool_results_after(agent.context.get_messages())
+        assert results
+        assert any("round limit" in r.content for r in results)
+
+    def test_provider_called_at_most_budget_plus_two(self) -> None:
+        from liz.core.agent import MAX_TOOL_ROUNDS
+
+        call = ToolCall(id="c1", name="echo_tool", arguments={"value": "x"})
+        provider = InsistentToolProvider(call)
+
+        with patch("liz.core.agent.create_provider", return_value=provider):
+            agent = Agent(
+                _make_settings(),
+                "sys",
+                tool_registry=_make_registry(EchoTool()),
+            )
+            agent.chat("keep asking")
+
+        # bounded: loop + one retry, never unbounded
+        assert provider.call_count <= MAX_TOOL_ROUNDS + 2

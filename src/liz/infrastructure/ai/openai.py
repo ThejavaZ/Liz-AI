@@ -69,24 +69,39 @@ class OpenAIProvider(AIProvider):
         return oai_messages
 
     @staticmethod
-    def _parse_tool_calls(message: Any) -> list[ToolCall]:
+    def _parse_arguments(raw_args: Any) -> tuple[dict[str, Any], str | None]:
+        """Decode a JSON argument blob, reporting failure instead of
+        silently substituting {} (which would run the tool with made-up
+        arguments)."""
+        if not raw_args:
+            return {}, None
+        try:
+            parsed = json.loads(raw_args)
+        except json.JSONDecodeError:
+            preview = str(raw_args)[:120]
+            return {}, f"arguments were not valid JSON: {preview}"
+        if not isinstance(parsed, dict):
+            return {}, (
+                "arguments must be a JSON object, got "
+                f"{type(parsed).__name__}"
+            )
+        return parsed, None
+
+    @classmethod
+    def _parse_tool_calls(cls, message: Any) -> list[ToolCall]:
         raw = getattr(message, "tool_calls", None) or []
         tool_calls: list[ToolCall] = []
 
         for call in raw:
             function = getattr(call, "function", None)
-            arguments: dict[str, Any] = {}
             raw_args = getattr(function, "arguments", None) if function else None
-            if raw_args:
-                try:
-                    arguments = json.loads(raw_args)
-                except json.JSONDecodeError:
-                    arguments = {}
+            arguments, error = cls._parse_arguments(raw_args)
 
             tool_calls.append(ToolCall(
                 id=getattr(call, "id", "") or f"call_{len(tool_calls)}",
                 name=getattr(function, "name", "") if function else "",
                 arguments=arguments,
+                error=error,
             ))
         return tool_calls
 
@@ -105,23 +120,21 @@ class OpenAIProvider(AIProvider):
             if part.function and part.function.arguments:
                 entry["arguments"] += part.function.arguments
 
-    @staticmethod
+    @classmethod
     def _finalize_tool_calls(
+        cls,
         accumulated: dict[int, dict[str, Any]],
     ) -> list[ToolCall]:
         tool_calls: list[ToolCall] = []
         for index in sorted(accumulated):
             entry = accumulated[index]
-            raw = entry["arguments"] or "{}"
-            try:
-                arguments = json.loads(raw)
-            except json.JSONDecodeError:
-                arguments = {}
+            arguments, error = cls._parse_arguments(entry["arguments"])
 
             tool_calls.append(ToolCall(
                 id=entry["id"] or f"call_{index}",
                 name=entry["name"],
                 arguments=arguments,
+                error=error,
             ))
         return tool_calls
 

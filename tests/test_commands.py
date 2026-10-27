@@ -247,12 +247,21 @@ class TestDoctorCommand:
 
 
 class TestNotesCommand:
-    def _handler_with_notes(self) -> CommandHandler:
+    def _handler_with_notes(
+        self, permission: Permission = Permission.ALLOW
+    ) -> CommandHandler:
         from liz.infrastructure.persistence.notes_store import SQLiteNotesStore
+        from liz.tools.notes import Notes
 
         settings = Settings(ai_provider="gemini", gemini_api_key="k")
         store = SQLiteNotesStore(":memory:")
-        return CommandHandler(settings, Context("sys"), ToolRegistry(), notes_store=store)
+        permissions = PermissionLayer()
+        permissions.set_default(permission)
+        registry = ToolRegistry(permissions=permissions)
+        registry.register(Notes(store))
+        return CommandHandler(
+            settings, Context("sys"), registry, notes_store=store
+        )
 
     def test_notes_disabled(self) -> None:
         result = _make_handler().handle("/notes")
@@ -352,13 +361,18 @@ class _FakeMemory:
 
 def _handler_with_memory() -> tuple[CommandHandler, _FakeMemory]:
     from liz.core.agent import Agent
+    from liz.tools.memory import Memory as MemoryTool
 
     memory = _FakeMemory()
     settings = Settings(ai_provider="gemini", gemini_api_key="k")
     agent = MagicMock(spec=Agent)
     agent.memory = memory
+    permissions = PermissionLayer()
+    permissions.set_default(Permission.ALLOW)
+    registry = ToolRegistry(permissions=permissions)
+    registry.register(MemoryTool(memory))
     handler = CommandHandler(
-        settings, Context("sys"), ToolRegistry(), agent=agent
+        settings, Context("sys"), registry, agent=agent
     )
     return handler, memory
 
@@ -433,6 +447,148 @@ class TestForgetCommand:
         handler.handle("/forget a")
 
         assert memory.facts() == {"b": "2"}
+
+
+class TestDestructiveCommandPermissions:
+    """`/notes del` and `/forget` must honour the same permission rules
+    as the model-driven tools, not bypass them via the raw stores."""
+
+    def _notes_handler(
+        self, permission: Permission, confirm=None
+    ) -> tuple[CommandHandler, object]:
+        from liz.infrastructure.persistence.notes_store import SQLiteNotesStore
+        from liz.tools.notes import Notes
+
+        settings = Settings(ai_provider="gemini", gemini_api_key="k")
+        store = SQLiteNotesStore(":memory:")
+        store.add("Title", "Body")
+        permissions = PermissionLayer()
+        permissions.set_default(Permission.ALLOW)
+        permissions.set_rule("notes", permission, action="delete")
+        registry = ToolRegistry(permissions=permissions, confirm=confirm)
+        registry.register(Notes(store))
+        handler = CommandHandler(
+            settings, Context("sys"), registry, notes_store=store
+        )
+        return handler, store
+
+    def test_notes_del_denied_by_rule(self) -> None:
+        handler, store = self._notes_handler(Permission.DENY)
+
+        result = handler.handle("/notes del 1")
+
+        assert "Permission denied" in result.output
+        assert len(store.list()) == 1
+
+    def test_notes_del_ask_denies_without_confirm(self) -> None:
+        handler, store = self._notes_handler(Permission.ASK)
+
+        result = handler.handle("/notes del 1")
+
+        assert "Permission denied" in result.output
+        assert len(store.list()) == 1
+
+    def test_notes_del_ask_deletes_with_confirm(self) -> None:
+        handler, store = self._notes_handler(
+            Permission.ASK, confirm=lambda name, preview: True
+        )
+
+        result = handler.handle("/notes del 1")
+
+        assert "Deleted note #1" in result.output
+        assert store.list() == []
+
+    def test_notes_del_preview_shows_action_and_id(self) -> None:
+        seen: list[tuple[str, str]] = []
+
+        def _confirm(name: str, preview: str) -> bool:
+            seen.append((name, preview))
+            return False
+
+        handler, _ = self._notes_handler(Permission.ASK, confirm=_confirm)
+
+        handler.handle("/notes del 1")
+
+        assert seen == [("notes", "action='delete', note_id='1'")]
+
+    def test_notes_del_allow_never_asks(self) -> None:
+        def _confirm(name: str, preview: str) -> bool:
+            raise AssertionError("ALLOW must not prompt")
+
+        handler, store = self._notes_handler(
+            Permission.ALLOW, confirm=_confirm
+        )
+
+        handler.handle("/notes del 1")
+
+        assert store.list() == []
+
+    def test_notes_list_still_allowed_when_delete_denied(self) -> None:
+        handler, _ = self._notes_handler(Permission.DENY)
+
+        result = handler.handle("/notes")
+
+        assert "Title" in result.output
+
+    def _memory_handler(
+        self, permission: Permission, confirm=None
+    ) -> tuple[CommandHandler, _FakeMemory]:
+        from liz.core.agent import Agent
+        from liz.tools.memory import Memory as MemoryTool
+
+        memory = _FakeMemory()
+        memory.learn_fact("editor", "vim")
+        settings = Settings(ai_provider="gemini", gemini_api_key="k")
+        agent = MagicMock(spec=Agent)
+        agent.memory = memory
+        permissions = PermissionLayer()
+        permissions.set_default(Permission.ALLOW)
+        permissions.set_rule("memory", permission, action="forget")
+        registry = ToolRegistry(permissions=permissions, confirm=confirm)
+        registry.register(MemoryTool(memory))
+        handler = CommandHandler(
+            settings, Context("sys"), registry, agent=agent
+        )
+        return handler, memory
+
+    def test_forget_denied_by_rule(self) -> None:
+        handler, memory = self._memory_handler(Permission.DENY)
+
+        result = handler.handle("/forget editor")
+
+        assert "Permission denied" in result.output
+        assert memory.facts()["editor"] == "vim"
+
+    def test_forget_ask_denies_without_confirm(self) -> None:
+        handler, memory = self._memory_handler(Permission.ASK)
+
+        result = handler.handle("/forget editor")
+
+        assert "Permission denied" in result.output
+        assert memory.facts()["editor"] == "vim"
+
+    def test_forget_ask_deletes_with_confirm(self) -> None:
+        handler, memory = self._memory_handler(
+            Permission.ASK, confirm=lambda name, preview: True
+        )
+
+        result = handler.handle("/forget editor")
+
+        assert "Forgot" in result.output
+        assert memory.facts() == {}
+
+    def test_forget_preview_shows_action_and_key(self) -> None:
+        seen: list[tuple[str, str]] = []
+
+        def _confirm(name: str, preview: str) -> bool:
+            seen.append((name, preview))
+            return False
+
+        handler, _ = self._memory_handler(Permission.ASK, confirm=_confirm)
+
+        handler.handle("/forget editor")
+
+        assert seen == [("memory", "action='forget', key='editor'")]
 
 
 class TestHelpListsMemoryCommands:

@@ -83,6 +83,37 @@ class Agent:
         self._restore_history()
         return session_id
 
+    def _final_answer(self):
+        """Ask for the closing answer once the tool-round budget is spent.
+
+        The request is made without tool schemas so the model cannot ask
+        for more tools. Some models still emit tool calls; those get an
+        explicit error result (never a fabricated success) and one more
+        no-tools request follows, so the context keeps the
+        tool_call -> result pairing.
+        """
+        response = self.provider.chat(
+            messages=self.context.get_messages(),
+            tools=None,
+        )
+
+        if response.tool_calls:
+            self.context.add_assistant_message(
+                response.content or "", tool_calls=response.tool_calls
+            )
+            for tool_call in response.tool_calls:
+                self._add_tool_result(
+                    tool_call,
+                    "Error: tool round limit reached "
+                    f"({MAX_TOOL_ROUNDS}); answer without calling tools.",
+                )
+            response = self.provider.chat(
+                messages=self.context.get_messages(),
+                tools=None,
+            )
+
+        return response
+
     def chat(self, user_input: str) -> str:
         self._sync_facts()
         self.context.add_user_message(user_input)
@@ -114,10 +145,7 @@ class Agent:
                 result = self._execute_tool(tool_call)
                 self._add_tool_result(tool_call, result)
 
-        final_response = self.provider.chat(
-            messages=self.context.get_messages(),
-            tools=tools,
-        )
+        final_response = self._final_answer()
         self.context.add_assistant_message(final_response.content)
         if self.memory is not None:
             self.memory.remember(
@@ -187,10 +215,7 @@ class Agent:
 
             yield StreamChunk(tool_events=events)
 
-        final_response = self.provider.chat(
-            messages=self.context.get_messages(),
-            tools=tools,
-        )
+        final_response = self._final_answer()
         self.context.add_assistant_message(final_response.content)
         if self.memory is not None:
             self.memory.remember(
@@ -203,6 +228,12 @@ class Agent:
         )
 
     def _execute_tool(self, tool_call: ToolCall) -> str:
+        if tool_call.error:
+            # The provider could not decode the call (e.g. arguments were
+            # not valid JSON). Report it instead of running the tool with
+            # fabricated arguments.
+            return f"Error: {tool_call.error}"
+
         if self.tool_registry is None:
             return "Error: No tool registry configured"
 

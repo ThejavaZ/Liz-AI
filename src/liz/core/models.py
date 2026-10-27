@@ -12,9 +12,18 @@ class Role(Enum):
 
 @dataclass
 class ToolCall:
+    """A request from the model to run a tool.
+
+    ``error`` carries a provider-side problem that makes the call
+    unexecutable (e.g. the model emitted arguments that are not valid
+    JSON). The agent turns it into an error result instead of running
+    the tool with fabricated arguments.
+    """
+
     id: str
     name: str
     arguments: dict[str, Any]
+    error: str | None = None
 
 
 @dataclass

@@ -64,14 +64,19 @@ arguments are malformed".
 - 14 tests in `tests/test_tool_resilience.py`; invariant: every
   `tool_call` gets exactly one `TOOL` result.
 
-### B4. Minor hardening (from the same audit)
+### B4. Minor hardening (from the same audit) — ✅ done
 
-- [ ] OpenAI adapter: invalid JSON arguments become `{}` silently — feed
-  an error back to the model instead.
+- [x] OpenAI adapter: invalid JSON arguments are no longer silently `{}`.
+  `ToolCall` gained an `error` field; `_parse_arguments` reports
+  malformed blobs, and the agent turns the error into an error result
+  instead of running the tool with fabricated arguments.
+- [x] `MAX_TOOL_ROUNDS` exhaustion no longer discards the last round's
+  calls: `_final_answer()` asks once without tool schemas, and any
+  residual tool call gets an explicit "round limit reached" error result
+  (bounded: at most one retry, never unbounded).
 - [ ] Ollama: models without native tool calling degrade silently — warn
-  at startup or on first tool round.
-- [ ] `MAX_TOOL_ROUNDS` exhaustion discards the last round's calls with
-  no feedback — tell the model (or the user) the budget ran out.
+  at startup or on first tool round. *(deferred: needs a model-support
+  table, product decision)*
 
 ---
 
@@ -80,10 +85,12 @@ arguments are malformed".
 Done in `b4d2b88`: interactive confirmations for ASK rules + `FS_ROOTS`
 path sandbox for filesystem/terminal tools.
 
-- [ ] 🐛 `/notes del <id>` bypasses the permission layer
-  (`src/liz/cli/commands.py:200-207` calls `notes_store.delete()`
-  directly, skipping the `("notes", "delete") → ASK` rule that the tool
-  path enforces in `app.py`). A typo deletes a note with no confirmation.
+- [x] 🐛 `/notes del <id>` and `/forget <key>` bypassed the permission
+  layer (`commands.py` called the stores directly, skipping the
+  `notes:delete → ASK` and `memory:forget → ASK` rules). Both now route
+  through `ToolRegistry.execute`, so a destructive CLI action honours the
+  same policy as the model-driven tool, including the confirmation
+  prompt.
 - [ ] Richer confirmation preview: include cwd, the rule that authorized
   the request and the expected effect (`app.py:67-76` already shows the
   kwargs preview).

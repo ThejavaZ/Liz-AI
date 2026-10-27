@@ -17,6 +17,7 @@ from liz.infrastructure.ai.models_registry import (
     resolve_models,
 )
 from liz.tools.registry import ToolRegistry
+from liz.tools.models import ToolStatus
 
 API_KEY_FIELDS = {
     "gemini": "gemini_api_key",
@@ -202,9 +203,7 @@ class CommandHandler:
                 note_id = int(rest.strip())
             except ValueError:
                 return CommandResult(output="Usage: /notes del <id>")
-            if self.notes_store.delete(note_id):
-                return CommandResult(output=f"Deleted note #{note_id}")
-            return CommandResult(output=f"No note with id: {note_id}")
+            return self._delete_note(note_id)
 
         if sub in ("find", "search"):
             if not rest.strip():
@@ -218,6 +217,24 @@ class CommandHandler:
         return CommandResult(
             output="Usage: /notes [list|add <title>|del <id>|find <text>]"
         )
+
+    def _delete_note(self, note_id: int) -> CommandResult:
+        """Delete a note through the registry, not the raw store.
+
+        Destructive operations must respect the same permission rules no
+        matter who triggers them: the model calls the `notes` tool, the
+        user types `/notes del`. Routing through the registry keeps the
+        `notes:delete` ASK rule and its confirmation prompt effective for
+        both paths.
+        """
+        result = self.tool_registry.execute(
+            "notes", action="delete", note_id=note_id
+        )
+        if result.status == ToolStatus.SUCCESS:
+            return CommandResult(output=result.data)
+        if result.status == ToolStatus.DENIED:
+            return CommandResult(output=f"Permission denied: {result.error}")
+        return CommandResult(output=f"Error: {result.error}")
         
     def _remember(self, args: str = "") -> CommandResult:
         memory = self._memory_or_none()
@@ -251,9 +268,16 @@ class CommandHandler:
         if not key:
             return CommandResult(output="Usage: /forget <clave>")
 
-        if memory.forget_fact(key):
-            return CommandResult(output=f"Forgot: {key}")
-        return CommandResult(output=f"No fact stored as: {key}")
+        # Same reasoning as _delete_note: forgetting a fact is destructive
+        # and must honour the memory:forget rule whatever the entry point.
+        result = self.tool_registry.execute(
+            "memory", action="forget", key=key
+        )
+        if result.status == ToolStatus.SUCCESS:
+            return CommandResult(output=result.data)
+        if result.status == ToolStatus.DENIED:
+            return CommandResult(output=f"Permission denied: {result.error}")
+        return CommandResult(output=f"Error: {result.error}")
 
     def _memory_or_none(self):
         return getattr(self.agent, "memory", None) if self.agent else None

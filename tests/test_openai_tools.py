@@ -127,6 +127,36 @@ class TestParseToolCalls:
         result = OpenAIProvider._parse_tool_calls(MagicMock(tool_calls=[call]))
         assert result[0].arguments == {}
 
+    def test_bad_json_arguments_sets_error(self) -> None:
+        """Invalid JSON must be reported, not silently replaced by {}."""
+        call = MagicMock()
+        call.id = "c1"
+        call.function.name = "x"
+        call.function.arguments = "{not json"
+
+        result = OpenAIProvider._parse_tool_calls(MagicMock(tool_calls=[call]))
+        assert result[0].error is not None
+        assert "not valid JSON" in result[0].error
+
+    def test_non_object_arguments_sets_error(self) -> None:
+        call = MagicMock()
+        call.id = "c1"
+        call.function.name = "x"
+        call.function.arguments = "[1, 2]"
+
+        result = OpenAIProvider._parse_tool_calls(MagicMock(tool_calls=[call]))
+        assert result[0].arguments == {}
+        assert "JSON object" in (result[0].error or "")
+
+    def test_valid_arguments_have_no_error(self) -> None:
+        call = MagicMock()
+        call.id = "c1"
+        call.function.name = "x"
+        call.function.arguments = '{"a": 1}'
+
+        result = OpenAIProvider._parse_tool_calls(MagicMock(tool_calls=[call]))
+        assert result[0].error is None
+
     def test_missing_id_generated(self) -> None:
         call = MagicMock()
         call.id = ""
