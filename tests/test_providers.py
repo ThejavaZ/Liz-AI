@@ -180,7 +180,9 @@ class TestClaudeProvider:
         mock_client_class.return_value = mock_client
 
         mock_response = MagicMock()
-        mock_response.content = [MagicMock(text="Hello from Claude")]
+        mock_response.content = [
+            MagicMock(type="text", text="Hello from Claude")
+        ]
         mock_response.model = "claude-3"
         mock_response.usage.input_tokens = 10
         mock_response.usage.output_tokens = 5
@@ -206,7 +208,7 @@ class TestClaudeProvider:
         mock_client_class.return_value = mock_client
 
         mock_response = MagicMock()
-        mock_response.content = [MagicMock(text="Response")]
+        mock_response.content = [MagicMock(type="text", text="Response")]
         mock_response.model = "claude-3"
         mock_response.usage.input_tokens = 5
         mock_response.usage.output_tokens = 3
