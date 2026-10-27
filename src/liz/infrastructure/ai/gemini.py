@@ -1,3 +1,4 @@
+import json
 from typing import Any, Iterator
 
 from google import genai
@@ -20,6 +21,14 @@ class GeminiProvider(AIProvider):
 
         self.client = genai.Client(api_key=api_key)
         self.model = model
+        self._call_seq = 0
+
+    def _next_call_id(self, name: str) -> str:
+        # Gemini assigns no id to function calls, so one is synthesized.
+        # The counter keeps parallel calls to the same tool apart and the
+        # name keeps ids distinct even across provider fallbacks.
+        self._call_seq += 1
+        return f"call_{self._call_seq}_{name}"
 
     def _convert_tools(
         self, tools: list[dict[str, Any]]
@@ -66,26 +75,47 @@ class GeminiProvider(AIProvider):
         self, messages: list[Message]
     ) -> tuple[str | None, list[types.Content]]:
         system_instruction = None
-        contents = []
+        contents: list[types.Content] = []
+        # Tool results carry only their id; remember which function each
+        # id belongs to so the response part can use the real name
+        # (Gemini matches it against the function_call in the history).
+        call_names: dict[str, str] = {}
 
         for msg in messages:
             if msg.role == Role.SYSTEM:
                 system_instruction = msg.content
+
             elif msg.role == Role.USER:
                 contents.append(types.Content(
                     role="user",
                     parts=[types.Part.from_text(text=msg.content)],
                 ))
+
             elif msg.role == Role.ASSISTANT:
-                contents.append(types.Content(
-                    role="model",
-                    parts=[types.Part.from_text(text=msg.content)],
-                ))
+                parts: list[types.Part] = []
+                # An empty text part would round-trip as None and break
+                # the next send_message, so only emit text when present.
+                if msg.content:
+                    parts.append(types.Part.from_text(text=msg.content))
+                for call in msg.tool_calls:
+                    call_names[call.id] = call.name
+                    args = call.arguments if isinstance(
+                        call.arguments, dict
+                    ) else {}
+                    parts.append(types.Part.from_function_call(
+                        name=call.name,
+                        args=args,
+                    ))
+                if not parts:
+                    parts.append(types.Part.from_text(text="(no content)"))
+                contents.append(types.Content(role="model", parts=parts))
+
             elif msg.role == Role.TOOL:
+                name = call_names.get(msg.tool_call_id or "", "tool_result")
                 contents.append(types.Content(
                     role="user",
                     parts=[types.Part.from_function_response(
-                        name="tool_result",
+                        name=name,
                         response={"result": msg.content},
                     )],
                 ))
@@ -111,11 +141,13 @@ class GeminiProvider(AIProvider):
         tool_calls: list[ToolCall] = []
         if response.candidates and response.candidates[0].content:
             for part in response.candidates[0].content.parts:
-                if part.function_call:
+                function_call = getattr(part, "function_call", None)
+                if function_call:
+                    args = function_call.args
                     tool_calls.append(ToolCall(
-                        id=f"call_{part.function_call.name}",
-                        name=part.function_call.name,
-                        arguments=dict(part.function_call.args),
+                        id=self._next_call_id(function_call.name),
+                        name=function_call.name,
+                        arguments=dict(args) if isinstance(args, dict) else {},
                     ))
         return tool_calls
 
@@ -133,7 +165,13 @@ class GeminiProvider(AIProvider):
             history=contents[:-1] if len(contents) > 1 else [],
         )
 
-        last_message = contents[-1].parts[0].text if contents else ""
+        # send_message takes str | Part | list[Part]. The last entry may
+        # be a function_response (after a tool round) whose text is None,
+        # so the parts themselves are forwarded.
+        if contents:
+            last_message: Any = contents[-1].parts
+        else:
+            last_message = ""
         return chat, last_message
 
     def chat(
@@ -164,6 +202,9 @@ class GeminiProvider(AIProvider):
         text_parts: list[str] = []
         tool_calls: list[ToolCall] = []
         usage: dict = {}
+        # Streaming can repeat a function_call across chunks; ids are
+        # unique per extraction, so dedup by name + arguments instead.
+        seen: set[tuple[str, str]] = set()
 
         for chunk in chat.send_message_stream(last_message):
             piece = self._extract_text(chunk)
@@ -172,8 +213,11 @@ class GeminiProvider(AIProvider):
                 yield StreamChunk(text=piece)
 
             for call in self._extract_tool_calls(chunk):
-                if call not in tool_calls:
-                    tool_calls.append(call)
+                key = (call.name, json.dumps(call.arguments, sort_keys=True))
+                if key in seen:
+                    continue
+                seen.add(key)
+                tool_calls.append(call)
 
             metadata = getattr(chunk, "usage_metadata", None)
             if metadata is not None:
