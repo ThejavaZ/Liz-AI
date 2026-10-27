@@ -15,45 +15,43 @@
 
 ## Phase B — Agent reliability (in progress)
 
-### B1. 🐛 Claude has no tool calling at all
+### B1. 🐛 Claude has no tool calling at all — ✅ fixed (`a2c0a12`)
 
 `src/liz/infrastructure/ai/claude.py`
 
-- `_build_kwargs` never sends `tools` — the parameter is silently dropped.
-- `chat` only extracts text blocks; `tool_use` blocks are discarded.
-- `_convert_messages` has no `Role.TOOL` branch — tool results never reach
-  the model, and assistant `tool_use` blocks are not replayed.
-- Streaming ignores tool events entirely.
+- `_build_kwargs` never sent `tools` — the parameter was silently dropped.
+- `chat` only extracted text blocks; `tool_use` blocks were discarded.
+- `_convert_messages` had no `Role.TOOL` branch — tool results never
+  reached the model, and assistant `tool_use` blocks were not replayed.
+- Streaming ignored tool events entirely.
 
-Impact: with `AI_PROVIDER=claude`, Liz *looks* functional but no tool ever
-executes. Silent failure — the worst kind.
+Impact: with `AI_PROVIDER=claude`, Liz *looked* functional but no tool ever
+executed. Silent failure — the worst kind.
 
-- [ ] send tool schemas in `_build_kwargs`
-- [ ] parse `tool_use` blocks into `ToolCall`
-- [ ] map `Role.TOOL` → `tool_result` blocks (id preserved)
-- [ ] replay assistant `tool_use` blocks on the next round
-- [ ] streaming tool support
-- [ ] tests (mocked anthropic client, no network)
+- [x] send tool schemas in `_build_kwargs` (converted to `input_schema`)
+- [x] parse `tool_use` blocks into `ToolCall`
+- [x] map `Role.TOOL` → `tool_result` blocks (id preserved, roles merged
+  alternately as the API requires)
+- [x] replay assistant `tool_use` blocks on the next round
+- [x] streaming tool support (`content_block_start` + `input_json_delta`)
+- [x] tests: 17 in `tests/test_claude_tools.py` (mocked client, no network)
 
-### B2. 🐛 Gemini tool loop breaks after round one
+### B2. 🐛 Gemini tool loop breaks after round one — ✅ fixed (`aa662e8`)
 
 `src/liz/infrastructure/ai/gemini.py`
 
-- After a tool round the last history message is a `function_response`
-  part whose `.text` is `None` (verified with the installed SDK), and
-  `_open_chat` passes that `None` as the live message.
-- `name="tool_result"` is hard-coded; the API requires the real function
-  name to match the `function_call`.
-- History replay only sends `from_text` parts — the assistant's
-  `function_call` parts disappear from the conversation.
-- Tool ids are fabricated as `call_{name}` — two parallel calls to the
-  same tool collide on one id.
+- After a tool round the live message was `contents[-1].parts[0].text`,
+  which is `None` once the last entry is a `function_response`.
+- `name="tool_result"` was hard-coded; the API requires the real name.
+- History replay only sent `from_text` parts — assistant `function_call`
+  parts disappeared from the conversation.
+- Tool ids were fabricated as `call_{name}` — parallel calls collided.
 
-- [ ] send `function_response` with the real function name
-- [ ] keep assistant `function_call` parts in the replayed history
-- [ ] never pass `None` as the live message
-- [ ] unique tool-call ids (counter or response id)
-- [ ] tests (mocked client, no network)
+- [x] send `function_response` with the real function name
+- [x] keep assistant `function_call` parts in the replayed history
+- [x] never pass `None` as the live message (parts are forwarded)
+- [x] unique tool-call ids (`call_<n>_<name>`)
+- [x] tests: 13 in `tests/test_gemini_tools.py` (mocked client, no network)
 
 ### B3. ✅ Tool crashes and malformed arguments (done)
 
