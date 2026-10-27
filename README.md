@@ -71,6 +71,16 @@ GEMINI_API_KEY=your-key-here
 python main.py
 ```
 
+### Multiline input
+
+- **Paste a paragraph** — it arrives as a single message you can edit
+  before sending with <kbd>Enter</kbd> (bracketed paste; terminals
+  without it are coalesced automatically).
+- **End a line with `\`** to keep writing on the next line
+  (`... ` continuation prompt).
+- <kbd>Ctrl+C</kbd> cancels the draft in progress; at a clean prompt it
+  leaves the CLI. <kbd>Ctrl+D</kbd> or `/exit` also quits.
+
 ### Docker
 
 ```bash

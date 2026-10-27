@@ -101,13 +101,21 @@ path sandbox for filesystem/terminal tools.
 
 ---
 
-## Sprint 1 — Terminal experience (new)
+## Sprint 1 — Terminal experience (new) — ✅ done
 
-- [ ] Multiline input: write/paste paragraphs, edit, explicit send.
+- [x] Multiline input: write/paste paragraphs, edit, explicit send.
   Keep `/commands`, `/talk` and streaming behavior working
-  (`src/liz/cli/app.py:217` is a bare `input("You: ")` today).
-- [ ] Acceptance: pasting a long multi-paragraph message arrives as one
-  user message.
+  (`src/liz/cli/app.py:217` was a bare `input("You: ")`).
+  Implemented in `cli/prompt.py::read_message` with three mechanisms:
+  readline + bracketed paste (the paste lands as one editable buffer,
+  sent on Enter), `select()` burst coalescing for terminals without
+  bracketed paste, and explicit `\`-continuation lines. Ctrl+C cancels
+  a draft without leaving the CLI; only single-line messages are
+  routed to the command dispatcher (`is_command_message`), so a pasted
+  paragraph starting with `/` goes to the model.
+- [x] Acceptance: pasting a long multi-paragraph message arrives as one
+  user message. (Unit tests in `tests/test_cli_prompt.py` + verified
+  end-to-end on a pty.)
 
 ---
 

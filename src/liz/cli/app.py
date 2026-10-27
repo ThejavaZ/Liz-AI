@@ -1,6 +1,13 @@
 import sys
 from pathlib import Path
 
+try:
+    import readline  # noqa: F401  # line editing + bracketed paste for input()
+
+    HAS_READLINE = True
+except ImportError:  # pragma: no cover - readline is optional
+    HAS_READLINE = False
+
 from liz.config.settings import Settings
 from liz.core.agent import Agent
 from liz.core.memory import ConversationMemory
@@ -17,6 +24,7 @@ from liz.tools.notes import Notes
 from liz.tools.memory import Memory as MemoryTool
 from liz.cli.commands import CommandHandler
 from liz.cli.markdown import MarkdownRenderer
+from liz.cli.prompt import read_message, stdin_has_pending_lines
 from liz.cli.voice import create_voice_loop
 
 # Read-only or self-contained tools: never prompt the user for these.
@@ -74,6 +82,33 @@ def confirm_tool_request(tool_name: str, preview: str) -> bool:
         print()
         return False
     return answer.strip().lower() in _CONFIRM_ANSWERS
+
+
+def _set_bracketed_paste(enabled: bool) -> None:
+    """Ask a TTY to wrap pastes in ``ESC[200~ ... ESC[201~``.
+
+    Readline unwraps them, so a multi-line paste reaches ``input()``
+    as a single editable message instead of one message per line.
+    Without readline the markers would leak as literal text, so the
+    sequence is only sent when readline can parse it.
+    """
+    if not (HAS_READLINE and sys.stdout.isatty()):
+        return
+    try:
+        sys.stdout.write("\x1b[?200h" if enabled else "\x1b[?201l")
+        sys.stdout.flush()
+    except ValueError:  # stdout already closed
+        pass
+
+
+def is_command_message(message: str) -> bool:
+    """Only a single line starting with ``/`` is a command.
+
+    A pasted paragraph that happens to start with ``/`` (a list of
+    absolute paths, for instance) belongs to the model, not to the
+    command dispatcher, which would split it at the first newline.
+    """
+    return "\n" not in message and message.startswith("/")
 
 
 def create_tool_registry(
@@ -211,23 +246,34 @@ def run_cli() -> None:
     warn_unknown_model(settings)
     print("Type /help for commands, or /exit to leave.\n")
 
+    _set_bracketed_paste(True)
     try:
         while True:
             try:
-                user_input = input("You: ").strip()
+                user_input = read_message(
+                    has_pending=stdin_has_pending_lines
+                    if sys.stdin.isatty()
+                    else None,
+                )
             except (EOFError, KeyboardInterrupt):
                 print("\nGoodbye!")
                 break
 
+            if user_input is None:
+                print("\nGoodbye!")
+                break
+
             if not user_input:
+                # empty line, or a draft cancelled with Ctrl+C
                 continue
 
-            result = commands.handle(user_input)
-            if result is not None:
-                print(f"\n{result.output}\n")
-                if result.should_exit:
-                    break
-                continue
+            if is_command_message(user_input):
+                result = commands.handle(user_input)
+                if result is not None:
+                    print(f"\n{result.output}\n")
+                    if result.should_exit:
+                        break
+                    continue
 
             if user_input.lower() in ("exit", "quit"):
                 print("\nGoodbye!")
@@ -240,6 +286,7 @@ def run_cli() -> None:
             except Exception as e:
                 print(f"\nError: {e}\n")
     finally:
+        _set_bracketed_paste(False)
         voice.stop()
         memory.close()
         notes_store.close()
